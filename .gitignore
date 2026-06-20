@@ -1,0 +1,91 @@
+# ==========================================
+# FPGA-EKG Gitignore
+# ==========================================
+
+# --- OS & Editor Files ---
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+*~
+.vscode/
+.idea/
+
+# --- AMD/Xilinx Vivado ---
+# Project files and run directories
+.Xil/
+*.jou
+*.log
+*.str
+*.debug
+*.prm
+*.bxml
+*.gen/
+
+# Synthesis & implementation runs
+.cache/
+*.runs/
+*.hw/
+*.ip_user_files/
+*.sim/
+
+# Vivado build artifacts (large binaries)
+*.dcp
+*.bit
+*.bin
+*.ltx
+*.rpt
+*.rpx
+*.sys
+
+# --- Intel Quartus Prime ---
+# Compilation working directories
+db/
+incremental_db/
+output_files/
+greybox_tmp/
+hc_output/
+
+# Quartus workspace & settings
+*.qws
+*.qdf
+*.smsg
+*.summary
+*.rpt
+*.jdi
+*.pin
+*.done
+*.qmsg
+*.bak
+*.pof
+*.sof
+
+# Platform Designer (QSYS) generated files
+/synthesis/
+/simulation/
+
+# --- Simulation Tools (ModelSim, Questa, VCS, etc.) ---
+covhtmlreport/
+*.wlf
+*.mpf
+*.cr.mti
+*.ini
+work/
+msim_transcript
+transcript
+
+# --- Python & Data Analysis (used for DSP modeling/results) ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+
+# --- MATLAB (used for analysis/filter design) ---
+*.asv
+*.fig
+*.mex*
+*.mat

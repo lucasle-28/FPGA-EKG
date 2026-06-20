@@ -1,0 +1,103 @@
+<svg width="680" height="516" viewBox="0 0 680 516" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>FPGA EKG system architecture</title>
+<desc>Single-lead EKG signal flows from electrodes through an analog front-end and ADC into the Cyclone V SoC, where FPGA fabric does acquisition, DSP, QRS detection and neural-network classification, and the ARM HPS handles UI, alerts and logging over an Avalon-MM bridge.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
+<style>
+text{font-family:'Helvetica Neue',Arial,sans-serif}
+.th{font-size:14px;font-weight:500}
+.t{font-size:14px}
+.ts{font-size:12px;fill:#5F5E5A}
+.box{fill:#FBFBF9;stroke:#D3D1C7;stroke-width:1}
+.arr{stroke:#5F5E5A;stroke-width:1.5;fill:none}
+.coral rect{fill:#FAECE7;stroke:#D85A30;stroke-width:1}
+.coral text{fill:#712B13}
+.blue rect{fill:#E6F1FB;stroke:#378ADD;stroke-width:1}
+.blue text{fill:#0C447C}
+.purple rect{fill:#EEEDFE;stroke:#7F77DD;stroke-width:1}
+.purple text{fill:#3C3489}
+.gray rect{fill:#F1EFE8;stroke:#888780;stroke-width:1}
+.gray text{fill:#444441}
+.teal rect{fill:#E1F5EE;stroke:#1D9E75;stroke-width:1}
+.teal text{fill:#085041}
+</style>
+</defs>
+
+<g class="coral"><rect x="70" y="50" width="150" height="52" rx="6"/>
+<text class="th" x="145" y="72" text-anchor="middle">electrodes</text>
+<text class="ts" x="145" y="89" text-anchor="middle">single lead</text></g>
+
+<g class="coral"><rect x="255" y="50" width="150" height="52" rx="6"/>
+<text class="th" x="330" y="72" text-anchor="middle">analog front-end</text>
+<text class="ts" x="330" y="89" text-anchor="middle">AD8232</text></g>
+
+<g class="coral"><rect x="440" y="50" width="150" height="52" rx="6"/>
+<text class="th" x="515" y="72" text-anchor="middle">ADC</text>
+<text class="ts" x="515" y="89" text-anchor="middle">LTC2308, 12-bit</text></g>
+
+<line x1="220" y1="76" x2="255" y2="76" class="arr" marker-end="url(#arrow)"/>
+<text class="ts" x="237" y="69" text-anchor="middle">~1 mV</text>
+<line x1="405" y1="76" x2="440" y2="76" class="arr" marker-end="url(#arrow)"/>
+<text class="ts" x="422" y="69" text-anchor="middle">0–3.3 V</text>
+
+<path d="M515 102 V124 H132 V196" class="arr" marker-end="url(#arrow)"/>
+<text class="ts" x="300" y="118" text-anchor="middle">12-bit samples @ 250–500 Hz (SPI)</text>
+
+<rect x="40" y="128" width="600" height="352" rx="10" class="box"/>
+<text class="th" x="56" y="148" fill="#2C2C2A">Cyclone V SoC (5CSEMA5)</text>
+
+<rect x="58" y="158" width="564" height="146" rx="8" class="box"/>
+<text class="ts" x="72" y="178">FPGA fabric (VHDL)</text>
+
+<g class="blue"><rect x="70" y="196" width="124" height="48" rx="6"/>
+<text class="th" x="132" y="217" text-anchor="middle">io</text>
+<text class="ts" x="132" y="233" text-anchor="middle">spi adc driver</text></g>
+
+<g class="blue"><rect x="205" y="196" width="124" height="48" rx="6"/>
+<text class="th" x="267" y="217" text-anchor="middle">dsp</text>
+<text class="ts" x="267" y="233" text-anchor="middle">filters + notch</text></g>
+
+<g class="blue"><rect x="340" y="196" width="124" height="48" rx="6"/>
+<text class="th" x="402" y="217" text-anchor="middle">qrs detect</text>
+<text class="ts" x="402" y="233" text-anchor="middle">+ beat segment</text></g>
+
+<g class="purple"><rect x="475" y="196" width="124" height="48" rx="6"/>
+<text class="th" x="537" y="217" text-anchor="middle">nn</text>
+<text class="ts" x="537" y="233" text-anchor="middle">classify beat</text></g>
+
+<line x1="194" y1="220" x2="205" y2="220" class="arr" marker-end="url(#arrow)"/>
+<line x1="329" y1="220" x2="340" y2="220" class="arr" marker-end="url(#arrow)"/>
+<line x1="464" y1="220" x2="475" y2="220" class="arr" marker-end="url(#arrow)"/>
+
+<g class="gray"><rect x="70" y="260" width="529" height="36" rx="6"/>
+<text class="th" x="334" y="282" text-anchor="middle">ctrl — control + status registers</text></g>
+
+<rect x="58" y="346" width="564" height="118" rx="8" class="box"/>
+<text class="ts" x="72" y="366">HPS — ARM Cortex-A9 / Linux</text>
+
+<g class="teal"><rect x="72" y="382" width="168" height="50" rx="6"/>
+<text class="th" x="156" y="404" text-anchor="middle">waveform UI</text>
+<text class="ts" x="156" y="420" text-anchor="middle">VGA + 7-seg</text></g>
+
+<g class="teal"><rect x="256" y="382" width="168" height="50" rx="6"/>
+<text class="th" x="340" y="404" text-anchor="middle">heart rate</text>
+<text class="ts" x="340" y="420" text-anchor="middle">+ alerts</text></g>
+
+<g class="teal"><rect x="440" y="382" width="168" height="50" rx="6"/>
+<text class="th" x="524" y="404" text-anchor="middle">logging</text>
+<text class="ts" x="524" y="420" text-anchor="middle">ethernet / web</text></g>
+
+<line x1="334" y1="296" x2="334" y2="346" class="arr" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<text class="ts" x="346" y="325" text-anchor="start">lightweight HPS–FPGA bridge (Avalon-MM)</text>
+
+<g class="coral"><rect x="56" y="492" width="14" height="14" rx="3"/></g>
+<text class="ts" x="76" y="503">analog</text>
+<g class="blue"><rect x="146" y="492" width="14" height="14" rx="3"/></g>
+<text class="ts" x="166" y="503">FPGA datapath</text>
+<g class="purple"><rect x="290" y="492" width="14" height="14" rx="3"/></g>
+<text class="ts" x="310" y="503">neural net</text>
+<g class="gray"><rect x="396" y="492" width="14" height="14" rx="3"/></g>
+<text class="ts" x="416" y="503">control</text>
+<g class="teal"><rect x="476" y="492" width="14" height="14" rx="3"/></g>
+<text class="ts" x="496" y="503">HPS (ARM Linux)</text>
+</svg>
