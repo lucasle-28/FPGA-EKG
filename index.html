@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FPGA-EKG | Real-Time Electrocardiogram Signal Processing</title>
+<meta name="description" content="FPGA-based real-time EKG signal acquisition and DSP system using a Cyclone V DE1-SoC and AD8232 heart rate monitor. Summer 2026 project by Lucas Le.">
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+/* ================================================================
+   Design Tokens
+   ================================================================ */
+:root {
+  --bg:       #ffffff;
+  --surface:  #ffffff;
+  --surface2: #f8f9fa;
+  --text:     #212529;
+  --text-dim: #495057;
+  --rule:     #dee2e6;
+  --accent:   #0d6efd;
+  --accent-h: #0b5ed7;
+  --green:    #198754;
+  --amber:    #ffc107;
+  --red:      #dc3545;
+  --purple:   #6f42c1;
+
+  --serif:    'Playfair Display', Georgia, 'Times New Roman', serif;
+  --sans:     'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono:     'JetBrains Mono', 'Fira Code', Consolas, monospace;
+
+  --max:      900px;
+  --nav-h:    56px;
+  --radius:   4px;
+}
+
+/* ================================================================
+   Reset & Base
+   ================================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; scroll-padding-top: calc(var(--nav-h) + 24px); }
+
+body {
+  font-family: var(--serif);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.75;
+  font-size: 15.5px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ================================================================
+   Progress Bar
+   ================================================================ */
+#progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--purple));
+  z-index: 9999;
+  transition: width 0.1s linear;
+}
+
+/* ================================================================
+   Navigation
+   ================================================================ */
+nav {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background: #1e1e2e;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  height: var(--nav-h);
+}
+
+.nav-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.nav-logo {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #fff;
+  text-decoration: none;
+  white-space: nowrap;
+  margin-right: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-links {
+  display: flex;
+  list-style: none;
+  gap: 2px;
+  overflow-x: auto;
+}
+
+.nav-links li { position: relative; }
+
+.nav-links > li > a {
+  color: rgba(255,255,255,.65);
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 4px;
+  transition: 0.15s;
+  display: block;
+  white-space: nowrap;
+}
+
+.nav-links > li > a:hover,
+.nav-links > li > a.active {
+  color: #fff;
+  background: rgba(255,255,255,.08);
+}
+
+
+
+/* Mobile toggle */
+.nav-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.4rem;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+/* ================================================================
+   Hero
+   ================================================================ */
+.hero {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 40px 2rem 30px;
+  text-align: center;
+}
+
+.hero-eyebrow {
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.hero h1 {
+  font-family: var(--serif);
+  font-size: clamp(2rem, 5vw, 2.8rem);
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+.hero h1 em {
+  font-style: italic;
+  color: var(--accent);
+}
+
+.hero-sub {
+  font-size: 1.05rem;
+  color: var(--text-dim);
+  max-width: 560px;
+  margin: 0 auto 20px;
+  line-height: 1.7;
+}
+
+.hero-meta {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.meta-chip {
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+
+
+/* ================================================================
+   Sections
+   ================================================================ */
+section {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 2rem 3rem;
+}
+
+.section-divider {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+.section-divider hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 0;
+}
+
+.section-label {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  margin-bottom: 6px;
+  padding-top: 2.8rem;
+}
+
+section h2 {
+  font-family: var(--serif);
+  font-size: 1.7rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: var(--text);
+}
+
+section h3 {
+  font-family: var(--serif);
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 2rem 0 0.6rem;
+  color: var(--text);
+}
+
+section h4 {
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 1.4rem 0 0.5rem;
+  color: var(--accent);
+}
+
+p { margin-bottom: 1rem; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-h); text-decoration: underline; }
+strong { font-weight: 600; }
+ul, ol { margin: 0 0 1rem 1.5rem; }
+li { margin-bottom: 5px; }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: var(--surface2);
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--purple);
+}
+
+pre {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 18px;
+  overflow-x: auto;
+  margin: 1rem 0;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+/* ================================================================
+   Tables
+   ================================================================ */
+.table-wrap { overflow-x: auto; margin: 1rem 0; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+th {
+  text-align: left;
+  font-weight: 600;
+  padding: 9px 14px;
+  border-bottom: 2px solid var(--rule);
+  background: var(--surface2);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+tr:hover td { background: rgba(42,91,215,.02); }
+td code { font-size: 0.82em; }
+
+/* ================================================================
+   Callout Boxes (War-style)
+   ================================================================ */
+.callout {
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  margin: 1.2rem 0;
+  font-size: 0.9rem;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  line-height: 1.6;
+}
+
+.callout-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+
+.callout.note {
+  background: #f0f4ff;
+  border-left: 3px solid var(--accent);
+  color: #1e3a5f;
+}
+
+.callout.warn {
+  background: #fef9ee;
+  border-left: 3px solid var(--amber);
+  color: #78350f;
+}
+
+.callout.danger {
+  background: #fef2f2;
+  border-left: 3px solid var(--red);
+  color: #7f1d1d;
+}
+
+/* ================================================================
+   Placeholder Callouts
+   ================================================================ */
+.placeholder {
+  border: 2px dashed var(--rule);
+  border-radius: var(--radius);
+  padding: 18px 22px;
+  margin: 1.2rem 0;
+  position: relative;
+}
+
+.placeholder::before {
+  content: attr(data-type);
+  position: absolute;
+  top: -9px;
+  left: 14px;
+  background: var(--bg);
+  padding: 0 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.placeholder.text {
+  border-color: #e8d5a3;
+  background: #fffdf7;
+}
+
+.placeholder.text::before { color: var(--amber); }
+.placeholder.text p { color: var(--text-dim); font-size: 0.88rem; margin: 0; }
+
+.placeholder.image {
+  border-color: #c4b5fd;
+  background: #faf8ff;
+  min-height: 110px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.placeholder.image::before { color: var(--purple); }
+.placeholder.image .ph-icon { font-size: 1.6rem; margin-bottom: 6px; opacity: .55; }
+.placeholder.image .ph-name { font-family: var(--mono); font-size: 0.8rem; color: var(--purple); font-weight: 600; }
+.placeholder.image .ph-desc { font-size: 0.8rem; color: var(--text-dim); max-width: 480px; margin-top: 3px; }
+
+/* ================================================================
+   Media Items (images with captions)
+   ================================================================ */
+.media-item {
+  margin: 1.2rem 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.media-item img { width: 100%; display: block; }
+
+.media-item .caption {
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  text-align: center;
+  font-style: italic;
+}
+
+/* ================================================================
+   ASCII Diagram
+   ================================================================ */
+.ascii-diagram {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 20px;
+  overflow-x: auto;
+  margin: 1.2rem 0;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: var(--accent);
+  white-space: pre;
+}
+
+/* ================================================================
+   Checklist (TODO)
+   ================================================================ */
+.checklist { list-style: none; margin: 0; padding: 0; }
+
+.checklist li {
+  padding: 7px 0 7px 28px;
+  position: relative;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.88rem;
+  color: var(--text-dim);
+}
+
+.checklist li::before {
+  content: '';
+  position: absolute;
+  left: 2px; top: 11px;
+  width: 14px; height: 14px;
+  border: 1.5px solid var(--rule);
+  border-radius: 3px;
+}
+
+.checklist li code { font-size: 0.78em; }
+
+.todo-group { margin: 1.5rem 0; }
+
+.todo-group-title {
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+/* ================================================================
+   Footer
+   ================================================================ */
+footer {
+  max-width: var(--max);
+  margin: 2rem auto 0;
+  padding: 2rem;
+  text-align: center;
+  border-top: 1px solid var(--rule);
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}
+
+footer a { color: var(--accent); }
+
+/* ================================================================
+   Responsive
+   ================================================================ */
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .nav-toggle { display: block; }
+  .nav-links.open {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    top: var(--nav-h);
+    left: 0; right: 0;
+    background: #1e1e2e;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    padding: 8px;
+    gap: 2px;
+  }
+
+  .hero { padding: 48px 1.5rem 36px; }
+  section { padding: 0 1.5rem 2rem; }
+  .ascii-diagram { font-size: 0.52rem; }
+}
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<!-- ======== NAVIGATION ======== -->
+<nav>
+  <div class="nav-inner">
+    <a class="nav-logo" href="#">FPGA-EKG</a>
+    <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">☰</button>
+    <ul class="nav-links">
+      <li><a href="#demo" data-section="demo">Demo</a></li>
+      <li><a href="#objective" data-section="objective">Objective</a></li>
+      <li><a href="#introduction" data-section="introduction">Intro</a></li>
+      <li><a href="#high-level-design" data-section="high-level-design">Design</a></li>
+      <li><a href="#hardware-design" data-section="hardware-design">Hardware</a></li>
+      <li><a href="#fpga-design" data-section="fpga-design">FPGA</a></li>
+      <li><a href="#software-design" data-section="software-design">Software</a></li>
+      <li><a href="#results" data-section="results">Results</a></li>
+      <li><a href="#conclusion" data-section="conclusion">Conclusion</a></li>
+      <li><a href="#appendix" data-section="appendix">Appendix</a></li>
+      <li><a href="#references" data-section="references">References</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- ======== HERO ======== -->
+<div class="hero">
+  <div class="hero-eyebrow">Summer 2026 · FPGA Project</div>
+  <h1>FPGA-Based <em>Electrocardiogram</em><br>Signal Processing System</h1>
+  <p class="hero-sub">Real-time EKG acquisition &amp; DSP on a Cyclone V FPGA with a Python visualizer for live waveform display and heart rate monitoring.</p>
+  <p style="color:var(--text-dim);font-size:0.92rem;margin-bottom:18px;"><strong style="color:var(--text);">Lucas Le</strong></p>
+  <div class="hero-meta">
+    <div class="meta-chip">VHDL</div>
+    <div class="meta-chip">Cyclone V</div>
+    <div class="meta-chip">Python</div>
+    <div class="meta-chip">DE1-SoC</div>
+    <div class="meta-chip">AD8232</div>
+  </div>
+</div>
+
+<!-- ===== DEMO ===== -->
+<div class="section-divider"><hr></div>
+<section id="demo">
+  <div class="section-label">Demonstration</div>
+  <h2>Demo Video</h2>
+  <div class="placeholder text" data-type="❌ Placeholder – End of Project">
+    <p>Record a 2–3 minute demo video showing: (1) full hardware setup, (2) EKG on HEX displays, (3) Python visualizer with real-time waveform, (4) BPM detection. Upload to YouTube and embed here with an <code>&lt;iframe&gt;</code>.</p>
+  </div>
+</section>
+
+<!-- ===== OBJECTIVE ===== -->
+<div class="section-divider"><hr></div>
+<section id="objective">
+  <div class="section-label">Project Goal</div>
+  <h2>Objective</h2>
+  <p>This project implements a real-time electrocardiogram (EKG) signal acquisition and processing system on an FPGA. Using a Terasic DE1-SoC (Cyclone V) board and a SparkFun AD8232 single-lead heart rate monitor, the system captures analog cardiac signals through the onboard LTC2308 12-bit SAR ADC, processes them through a digital signal processing (DSP) pipeline implemented entirely in VHDL, and streams the processed data to a PC-based Python visualizer for real-time waveform display and heart rate calculation.</p>
+</section>
+
+<!-- ===== INTRODUCTION ===== -->
+<div class="section-divider"><hr></div>
+<section id="introduction">
+  <div class="section-label">Background</div>
+  <h2>Introduction</h2>
+  <p>Electrocardiogram (EKG/ECG) signals are among the most critical biomedical measurements, providing insight into cardiac rhythm, conduction abnormalities, and overall heart health. Commercial EKG systems rely on specialized mixed-signal ASICs for signal conditioning and DSP. This project explores an alternative approach: using an FPGA to perform the entire digital processing pipeline in hardware, offering deterministic timing, parallelism, and the flexibility to modify the processing chain without hardware changes.</p>
+  <p>The system is organized into three layers:</p>
+  <ol>
+    <li><strong>Analog front-end:</strong> The AD8232 single-lead heart rate monitor amplifies and filters the raw electrode signal, producing an analog output suitable for ADC digitization.</li>
+    <li><strong>FPGA digital back-end:</strong> The Cyclone V FPGA drives the LTC2308 ADC via SPI at 360 samples/second, then routes the 12-bit samples through a configurable DSP pipeline (DC blocking, 50/60 Hz notch filter, bandpass FIR, QRS peak detection).</li>
+    <li><strong>PC visualization:</strong> A Python application reads processed samples over the USB-Blaster JTAG interface and renders a real-time scrolling waveform with calculated BPM.</li>
+  </ol>
+  <div class="placeholder text" data-type="❌ Placeholder – End of Project">
+    <p>Add 1–2 more paragraphs discussing what was most technically challenging, what the final result looks like in practice, and interesting discoveries.</p>
+  </div>
+</section>
+
+<!-- ===== HIGH LEVEL DESIGN ===== -->
+<div class="section-divider"><hr></div>
+<section id="high-level-design">
+  <div class="section-label">Part 1</div>
+  <h2>High Level Design</h2>
+
+  <h3>System Block Diagram</h3>
+  <p>The high-level architecture is shown below:</p>
+  <div class="placeholder image" data-type="📷 Image Needed">
+    <div class="ph-icon">🖼️</div>
+    <div class="ph-name">system_block_diagram</div>
+    <div class="ph-desc">Polished architecture diagram (draw.io/Visio). AD8232 → LTC2308 ADC → FPGA pipeline → JTAG → PC with labeled signal paths and bus widths.</div>
+  </div>
+
+  <div class="ascii-diagram">┌──────────────┐    Analog    ┌──────────────┐     SPI      ┌──────────────────────────────────┐
+│              │    Signal    │  LTC2308     │   12-bit     │          Cyclone V FPGA          │
+│   AD8232     │─────────────►│  12-bit ADC  │─────────────►│                                  │
+│  Heart Rate  │              │  (onboard)   │              │  ┌────────┐  ┌──────┐  ┌──────┐  │
+│   Monitor    │              └──────────────┘              │  │  ADC   │─►│ DSP  │─►│ JTAG │  │
+│              │                                            │  │ Driver │  │ Pipe │  │Stream│  │
+└──────────────┘                                            │  └────────┘  └──────┘  └──┬───┘  │
+   ▲ ▲ ▲                                                    │                           │      │
+   │ │ │  Electrode pads (RA, LA, RL)                       └───────────────────────────┼──────┘
+   │ │ │                                                                                │
+   Patient                                                                              │ USB-Blaster
+                                                                                        │ (JTAG UART)
+                                                                                        ▼
+                                                                                 ┌──────────────┐
+                                                                                 │   Python      │
+                                                                                 │  Visualizer   │
+                                                                                 │  (PyQtGraph)  │
+                                                                                 └──────────────┘</div>
+
+  <h4>VHDL Module Hierarchy</h4>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Module</th><th>Source File</th><th>Function</th></tr></thead>
+      <tbody>
+        <tr><td><code>fpga_ekg_top</code></td><td><code>src/fpga_ekg_top.vhd</code></td><td>Top-level entity, reset/IO routing</td></tr>
+        <tr><td><code>sample_clock</code></td><td><code>src/sample_clock.vhd</code></td><td>360 Hz sample tick from 50 MHz clock</td></tr>
+        <tr><td><code>adc_spi_driver</code></td><td><code>src/adc_spi_driver.vhd</code></td><td>SPI master for LTC2308 ADC</td></tr>
+        <tr><td><code>dc_block</code></td><td><code>src/dc_block.vhd</code></td><td>DC offset removal filter</td></tr>
+        <tr><td><code>notch_5060</code></td><td><code>src/notch_5060.vhd</code></td><td>50/60 Hz powerline notch filter</td></tr>
+        <tr><td><code>bandpass_fir</code></td><td><code>src/bandpass_fir.vhd</code></td><td>Bandpass FIR filter (0.5–40 Hz)</td></tr>
+        <tr><td><code>qrs_detect</code></td><td><code>src/qrs_detect.vhd</code></td><td>QRS complex peak detector</td></tr>
+        <tr><td><code>beat_segmenter</code></td><td><code>src/beat_segmenter.vhd</code></td><td>Beat-to-beat segmentation</td></tr>
+        <tr><td><code>nn_accel</code></td><td><code>src/nn_accel.vhd</code></td><td>Neural network accelerator</td></tr>
+        <tr><td><code>result_fifo</code></td><td><code>src/result_fifo.vhd</code></td><td>Output FIFO buffer</td></tr>
+        <tr><td><code>jtag_streamer</code></td><td><code>src/jtag_streamer.vhd</code></td><td>JTAG UART data streamer to PC</td></tr>
+        <tr><td><code>view_sig</code></td><td><code>src/view_sig.vhd</code></td><td>Signal debug/view utility</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 id="background-math">Background Math &amp; Theory</h3>
+  <h4>EKG Signal Characteristics</h4>
+  <ul>
+    <li><strong>Frequency range:</strong> 0.5 Hz – 40 Hz (diagnostic bandwidth)</li>
+    <li><strong>Amplitude:</strong> ~1 mV at the skin, amplified to ~1–3 V by the AD8232</li>
+    <li><strong>Key features:</strong> P-wave, QRS complex, T-wave</li>
+    <li><strong>Sampling rate:</strong> 360 Hz (matching the AHA EKG database standard)</li>
+  </ul>
+  <div class="placeholder image" data-type="📷 Image Needed">
+    <div class="ph-icon">💓</div>
+    <div class="ph-name">ekg_pqrst_labeled</div>
+    <div class="ph-desc">Labeled diagram of a single EKG heartbeat: P-wave, QRS complex, T-wave, PR interval, QT interval, ST segment.</div>
+  </div>
+
+  <h4>ADC Sampling</h4>
+  <p>The LTC2308 is a 12-bit SAR ADC with SPI. Key parameters: 4096 levels, 0–4.096 V range, 500 ksps max (we use 360 sps). At 360 Hz, the Nyquist frequency is 180 Hz — well above the 40 Hz EKG bandwidth.</p>
+
+  <h4>DSP Pipeline Theory</h4>
+  <div class="placeholder text" data-type="❌ Placeholder – Incremental"><p>For each DSP stage, document: transfer function H(z), filter coefficients, fixed-point format, frequency response plots, and design rationale.</p></div>
+
+  <p><strong>1. DC Blocking Filter</strong></p>
+  <div class="placeholder text" data-type="❌ Placeholder – Incremental"><p>Difference equation, cutoff frequency, implementation.</p></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📊</div><div class="ph-name">dc_block_freq_response</div><div class="ph-desc">Frequency response plot (MATLAB/Python).</div></div>
+
+  <p><strong>2. 50/60 Hz Notch Filter</strong></p>
+  <div class="placeholder text" data-type="❌ Placeholder – Incremental"><p>Transfer function, notch depth, Q-factor, IIR vs FIR.</p></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📊</div><div class="ph-name">notch_freq_response</div><div class="ph-desc">Notch at 50/60 Hz with before/after spectrum.</div></div>
+
+  <p><strong>3. Bandpass FIR Filter</strong></p>
+  <div class="placeholder text" data-type="❌ Placeholder – Incremental"><p>Passband, stopband attenuation, taps, window, coefficients.</p></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📊</div><div class="ph-name">bandpass_freq_response</div><div class="ph-desc">Bandpass FIR: passband 0.5–40 Hz, transition bands, stopband.</div></div>
+
+  <p><strong>4. QRS Detection</strong></p>
+  <div class="placeholder text" data-type="❌ Placeholder – Incremental"><p>Algorithm (Pan-Tompkins), threshold logic, refractory period, pseudocode/state machine.</p></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">🔀</div><div class="ph-name">qrs_state_machine</div><div class="ph-desc">State machine diagram for QRS detection.</div></div>
+
+  <h3 id="logical-structure">Logical Structure</h3>
+  <p>The FPGA uses a synchronous pipeline in a single 50 MHz clock domain:</p>
+  <ol>
+    <li><code>sample_clock</code> divides 50 MHz → 360 Hz tick.</li>
+    <li>Each tick triggers <code>adc_spi_driver</code> for an SPI transaction.</li>
+    <li>12-bit result flows through <code>dc_block</code> → <code>notch_5060</code> → <code>bandpass_fir</code>.</li>
+    <li><code>qrs_detect</code> identifies R-peaks for BPM.</li>
+    <li><code>jtag_streamer</code> sends samples to PC over JTAG UART.</li>
+  </ol>
+  <div class="callout note"><span class="callout-icon">📌</span><span>All modules share a common <code>clk</code> / <code>reset_n</code> interface with <code>valid</code> strobes for handshaking.</span></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">⏱️</div><div class="ph-name">pipeline_timing_diagram</div><div class="ph-desc">Timing diagram: sample propagating through each stage with clock counts and valid alignment.</div></div>
+
+  <h3 id="hw-sw-tradeoffs">Hardware/Software Tradeoffs</h3>
+  <p>DSP in VHDL (not on the HPS ARM core) was chosen for:</p>
+  <ul>
+    <li><strong>Deterministic latency:</strong> Fixed sample-to-output delay, no OS jitter.</li>
+    <li><strong>Parallelism:</strong> Multiple filter stages run concurrently.</li>
+    <li><strong>Learning:</strong> The goal was FPGA-based DSP exploration.</li>
+  </ul>
+  <p>Python handles visualization because PyQtGraph provides real-time plotting and the JTAG UART requires zero additional hardware.</p>
+  <div class="placeholder text" data-type="❌ Placeholder – Incremental"><p>Add additional tradeoffs: fixed-point vs floating-point, filter order vs resource usage, JTAG bandwidth.</p></div>
+
+  <h3 id="standards">Relationship to Standards</h3>
+  <ul>
+    <li><strong>AHA Database Standard:</strong> 360 Hz sampling matches the AHA EKG database for future test-vector validation.</li>
+    <li><strong>IEC 60601-2-47:</strong> Pipeline designed with awareness of the 0.05–40 Hz monitoring bandwidth.</li>
+    <li><strong>SPI:</strong> ADC communication follows SPI Mode 0 (CPOL=0, CPHA=0).</li>
+  </ul>
+</section>
+
+<!-- ===== HARDWARE DESIGN ===== -->
+<div class="section-divider"><hr></div>
+<section id="hardware-design">
+  <div class="section-label">Part 2</div>
+  <h2>Hardware Design</h2>
+
+  <h3 id="wiring">Wiring &amp; Connections</h3>
+  <p>The AD8232 connects to the DE1-SoC via the onboard ADC input header and GPIO_0 expansion header.</p>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📸</div><div class="ph-name">wiring_photo_annotated</div><div class="ph-desc">Annotated close-up: AD8232 wired to DE1-SoC GPIO. Label OUTPUT, 3.3V, GND, LO+, LO−.</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">🔧</div><div class="ph-name">wiring_diagram</div><div class="ph-desc">Fritzing/draw.io physical wiring guide for AD8232 ↔ DE1-SoC.</div></div>
+
+  <h4>Analog Signal (ADC Input)</h4>
+  <div class="table-wrap"><table>
+    <thead><tr><th>AD8232 Pin</th><th>DE1-SoC Connection</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><strong>OUTPUT</strong></td><td>ADC CH0 input header</td><td>Analog EKG → LTC2308 Channel 0</td></tr>
+      <tr><td><strong>3.3V</strong></td><td>3.3V on GPIO_0 header</td><td>Power supply</td></tr>
+      <tr><td><strong>GND</strong></td><td>GND on GPIO_0 header</td><td>Common ground</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>Digital Signals (Leads-Off Detection)</h4>
+  <div class="table-wrap"><table>
+    <thead><tr><th>AD8232 Pin</th><th>FPGA Signal</th><th>GPIO_0 Pin</th><th>Quartus Pin</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><strong>LO+</strong></td><td><code>GPIO_0[0]</code></td><td>JP1 Pin 1</td><td><code>PIN_AC18</code></td><td>Leads-off (+)</td></tr>
+      <tr><td><strong>LO-</strong></td><td><code>GPIO_0[1]</code></td><td>JP1 Pin 2</td><td><code>PIN_Y17</code></td><td>Leads-off (−)</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>Onboard ADC (LTC2308 SPI)</h4>
+  <div class="table-wrap"><table>
+    <thead><tr><th>FPGA Signal</th><th>Quartus Pin</th><th>Dir</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>ADC_CONVST</code></td><td><code>PIN_AJ4</code></td><td>Out</td><td>Conversion start</td></tr>
+      <tr><td><code>ADC_DIN</code></td><td><code>PIN_AK4</code></td><td>Out</td><td>SPI config data</td></tr>
+      <tr><td><code>ADC_DOUT</code></td><td><code>PIN_AK3</code></td><td>In</td><td>SPI result (12-bit)</td></tr>
+      <tr><td><code>ADC_SCLK</code></td><td><code>PIN_AK2</code></td><td>Out</td><td>SPI clock</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>LED Indicators</h4>
+  <div class="table-wrap"><table>
+    <thead><tr><th>LED</th><th>Function</th></tr></thead>
+    <tbody>
+      <tr><td><code>LEDR[0]</code></td><td>Heartbeat — 1 Hz blink confirms clock is running</td></tr>
+      <tr><td><code>LEDR[1]</code></td><td>ADC busy</td></tr>
+      <tr><td><code>LEDR[8]</code></td><td>Sample valid flash</td></tr>
+      <tr><td><code>LEDR[9]</code></td><td>Leads-off warning</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="board-photos">Board Photos</h3>
+  <div class="media-item"><img src="media/June19-Phase0-proof.jpg" alt="Phase 0 proof"><div class="caption">Phase 0 — LED blink proof-of-concept on DE1-SoC</div></div>
+  <div class="media-item"><img src="media/July-3-update.jpg" alt="Hardware update"><div class="caption">July 3 — Hardware update with AD8232 wired to DE1-SoC</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">🔢</div><div class="ph-name">hex_display_adc_readout</div><div class="ph-desc">HEX displays showing live 12-bit ADC value.</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">🧑‍⚕️</div><div class="ph-name">full_setup_with_electrodes</div><div class="ph-desc">Complete end-to-end setup with electrodes attached.</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">💡</div><div class="ph-name">led_indicators_running</div><div class="ph-desc">LEDs during normal operation.</div></div>
+</section>
+
+<!-- ===== FPGA DESIGN ===== -->
+<div class="section-divider"><hr></div>
+<section id="fpga-design">
+  <div class="section-label">Part 3</div>
+  <h2>FPGA Design</h2>
+
+  <h3 id="adc-spi">ADC SPI Driver</h3>
+  <p>The <code>adc_spi_driver</code> implements a bit-banged SPI master for the LTC2308. Triggered by the sample clock, it:</p>
+  <ol>
+    <li>Asserts <code>ADC_CONVST</code> high for one clock cycle.</li>
+    <li>Clocks out a 6-bit channel config on <code>ADC_DIN</code> (CH0).</li>
+    <li>Simultaneously clocks in 12 bits on <code>ADC_DOUT</code>.</li>
+    <li>Asserts <code>sample_valid</code> when the result is ready.</li>
+  </ol>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📟</div><div class="ph-name">spi_timing_waveform</div><div class="ph-desc">ModelSim waveform: CONVST, SCLK, DIN, DOUT, sample_valid. Annotate bit positions.</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">🔀</div><div class="ph-name">adc_driver_state_machine</div><div class="ph-desc">FSM diagram: IDLE → CONV → SHIFT → DONE.</div></div>
+
+  <h3 id="dsp-pipeline">DSP Pipeline</h3>
+  <div class="placeholder text" data-type="❌ Placeholder – Incremental"><p>For each module (dc_block, notch_5060, bandpass_fir): purpose, VHDL approach (direct-form, transposed), fixed-point widths, simulation waveforms, gotchas.</p></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📉</div><div class="ph-name">dc_block_sim_waveform</div><div class="ph-desc">dc_block input vs output — DC offset removal.</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📉</div><div class="ph-name">notch_sim_waveform</div><div class="ph-desc">notch_5060 removing 60 Hz interference.</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📉</div><div class="ph-name">bandpass_sim_waveform</div><div class="ph-desc">bandpass_fir — out-of-band noise attenuated.</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📊</div><div class="ph-name">dsp_pipeline_full_sim</div><div class="ph-desc">Full pipeline: raw → each stage → output.</div></div>
+
+  <h3 id="qrs-detection">QRS Detection</h3>
+  <div class="placeholder text" data-type="❌ Placeholder – Incremental"><p>Algorithm (Pan-Tompkins), state machine, threshold adaptation, refractory period, BPM from R-R intervals, simulation results.</p></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">💓</div><div class="ph-name">qrs_detection_sim</div><div class="ph-desc">QRS detector identifying R-peaks on a test signal.</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📏</div><div class="ph-name">rr_interval_bpm</div><div class="ph-desc">R-R interval measurement → BPM conversion.</div></div>
+
+  <h3 id="jtag-streamer">JTAG Streamer</h3>
+  <p>The <code>jtag_streamer</code> uses the Altera JTAG UART megafunction to stream samples over USB-Blaster — no additional hardware needed. Each 12-bit sample is sent as ASCII hex + newline.</p>
+  <div class="placeholder text" data-type="❌ Placeholder – Incremental"><p>Describe framing protocol, flow control, measured throughput, buffer overflow handling.</p></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📦</div><div class="ph-name">jtag_data_format</div><div class="ph-desc">Byte framing diagram: header, MSB, LSB, newline.</div></div>
+
+  <h3 id="top-level">Top-Level Integration</h3>
+  <p><code>fpga_ekg_top</code> instantiates all modules:</p>
+  <ul>
+    <li><code>KEY(0)</code> = active-low async reset.</li>
+    <li><code>GPIO_0[0:1]</code> = AD8232 leads-off detection.</li>
+    <li>HEX0–HEX2 show live 12-bit ADC value in hex. HEX3–5 blanked.</li>
+    <li>Unused GPIO driven high-Z.</li>
+  </ul>
+  <div class="placeholder text" data-type="❌ Placeholder – End of Project"><p>Describe complete data path from ADC → DSP → JTAG, including MUX/bypass switches.</p></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">🧩</div><div class="ph-name">rtl_viewer_top</div><div class="ph-desc">Quartus RTL Viewer screenshot of top-level.</div></div>
+</section>
+
+<!-- ===== SOFTWARE DESIGN ===== -->
+<div class="section-divider"><hr></div>
+<section id="software-design">
+  <div class="section-label">Part 4</div>
+  <h2>Software Design — Python Visualizer</h2>
+  <p>Built with <strong>PyQt6</strong> (GUI), <strong>PyQtGraph</strong> (real-time plotting), and <strong>pyserial</strong> (JTAG communication). Features: scrolling waveform, real-time BPM, leads-off indicator.</p>
+  <div class="placeholder text" data-type="❌ Placeholder – End of Project"><p>Add: data parsing/buffering strategy, PC-side noise filtering, BPM algorithm, known issues.</p></div>
+  <div class="media-item"><img src="media/ekg-visualizer-v1-inc.png" alt="EKG Visualizer v1"><div class="caption">EKG Visualizer v1 — initial real-time waveform display</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">🖥️</div><div class="ph-name">visualizer_final_screenshot</div><div class="ph-desc">Final visualizer with clean EKG, BPM readout, axis labels.</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">⚠️</div><div class="ph-name">visualizer_leads_off</div><div class="ph-desc">Visualizer showing leads-off warning state.</div></div>
+</section>
+
+<!-- ===== RESULTS ===== -->
+<div class="section-divider"><hr></div>
+<section id="results">
+  <div class="section-label">Part 5</div>
+  <h2>Results</h2>
+  <div class="placeholder text" data-type="❌ Placeholder – End of Project"><p>Entire section to be written with final measurements, plots, and screenshots.</p></div>
+
+  <h3 id="signal-quality">Signal Quality</h3>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📈</div><div class="ph-name">raw_vs_filtered_plot</div><div class="ph-desc">Raw ADC vs. DSP-filtered signal comparison.</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">💓</div><div class="ph-name">clean_ekg_pqrst</div><div class="ph-desc">Clean EKG with P, QRS, T annotated.</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📊</div><div class="ph-name">snr_comparison_chart</div><div class="ph-desc">SNR (dB) at each pipeline stage.</div></div>
+
+  <h3 id="resource-usage">FPGA Resource Usage</h3>
+  <div class="placeholder text" data-type="❌ Placeholder – End of Project"><p>Paste Quartus compilation report: Logic Elements, Registers, Memory bits, DSP blocks, PLLs.</p></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">🧮</div><div class="ph-name">quartus_resource_summary</div><div class="ph-desc">Quartus Fitter → Resource Usage Summary.</div></div>
+
+  <h3 id="timing-latency">Timing &amp; Latency</h3>
+  <div class="placeholder text" data-type="❌ Placeholder – End of Project"><p>Fmax, sample-to-output latency, JTAG throughput, timing violations.</p></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">⏱️</div><div class="ph-name">timing_analyzer_fmax</div><div class="ph-desc">Quartus Timing Analyzer: Fmax (Slow 1100mV 85°C).</div></div>
+
+  <h3 id="bpm-accuracy">BPM Accuracy</h3>
+  <div class="placeholder text" data-type="❌ Placeholder – End of Project"><p>Measured vs. reference BPM, accuracy range, failure cases.</p></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">❤️</div><div class="ph-name">bpm_accuracy_table_or_chart</div><div class="ph-desc">BPM comparison against reference device.</div></div>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">🏃</div><div class="ph-name">motion_artifact_example</div><div class="ph-desc">EKG and BPM during motion artifacts.</div></div>
+</section>
+
+<!-- ===== CONCLUSION ===== -->
+<div class="section-divider"><hr></div>
+<section id="conclusion">
+  <div class="section-label">Part 6</div>
+  <h2>Conclusion</h2>
+  <div class="placeholder text" data-type="❌ Placeholder – End of Project"><p>2–3 paragraphs: what was achieved, what went well / was difficult, most valuable lessons.</p></div>
+
+  <h3 id="results-vs-expectations">Results vs. Expectations</h3>
+  <div class="placeholder text" data-type="❌ Placeholder – End of Project"><p>Compare final product against original project plan. What worked, what didn't, what surprised you.</p></div>
+
+  <h3 id="future-work">Future Work</h3>
+  <div class="placeholder text" data-type="❌ Placeholder – End of Project"><p>3–5 extensions: multi-lead, NN arrhythmia classification, HPS wireless streaming, beat segmentation, portable design.</p></div>
+
+  <h3 id="ip">Intellectual Property Considerations</h3>
+  <ul>
+    <li>LTC2308 SPI driver written from scratch based on the <a href="https://www.analog.com/en/products/ltc2308.html">LTC2308 datasheet</a> and DE1-SoC schematic.</li>
+    <li>DSP filter designs are original implementations.</li>
+    <li>Python visualizer uses open-source libraries (PyQt6, PyQtGraph, pyserial).</li>
+  </ul>
+  <div class="placeholder text" data-type="❌ Placeholder – Incremental"><p>Add any additional IP notes — referenced code, tutorials, open-source projects.</p></div>
+
+  <h3 id="safety">Safety Considerations</h3>
+  <div class="callout warn">
+    <span class="callout-icon">⚠️</span>
+    <span><strong>This project is NOT a medical device.</strong> It is an educational prototype and must not be used for clinical diagnosis.</span>
+  </div>
+  <ul>
+    <li>AD8232 provides built-in input protection and right-leg drive.</li>
+    <li>Electrode connections are low-voltage (3.3V), low-current — no shock hazard.</li>
+    <li>Electrically isolated from mains when running on USB power.</li>
+  </ul>
+</section>
+
+<!-- ===== WORK DISTRIBUTION ===== -->
+<div class="section-divider"><hr></div>
+<section id="work-distribution">
+  <div class="section-label">Timeline</div>
+  <h2>Work Distribution</h2>
+  <div class="placeholder text" data-type="❌ Placeholder – End of Project"><p>Weekly timeline: Week 1 (scaffolding, LED blinker), Week 2 (ADC driver, visualizer v1), Week 3 (testbenches, simulation), Week 4 (DSP filters), …</p></div>
+</section>
+
+<!-- ===== APPENDIX ===== -->
+<div class="section-divider"><hr></div>
+<section id="appendix">
+  <div class="section-label">Supplementary</div>
+  <h2>Appendix</h2>
+
+  <h3>A. Bill of Materials</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Qty</th><th>Component</th><th>Part #</th><th>Source</th><th>Cost</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Terasic DE1-SoC (Rev F)</td><td>P0682</td><td>Terasic</td><td style="color:var(--amber);">❌ $___</td></tr>
+      <tr><td>1</td><td>SparkFun AD8232</td><td>SEN-12650</td><td>SparkFun</td><td style="color:var(--amber);">❌ $___</td></tr>
+      <tr><td>1</td><td>Electrode Pad Set (3-lead)</td><td>—</td><td style="color:var(--amber);">❌</td><td style="color:var(--amber);">❌ $___</td></tr>
+      <tr><td>1</td><td>USB Cable (USB-Blaster)</td><td>—</td><td>Included</td><td>$0</td></tr>
+      <tr><td>—</td><td>Jumper wires</td><td>—</td><td>—</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>B. Hardware Schematic</h3>
+  <div class="placeholder image" data-type="📷 Image Needed"><div class="ph-icon">📐</div><div class="ph-name">hardware_schematic</div><div class="ph-desc">Full schematic: AD8232 ↔ DE1-SoC, electrodes, power routing.</div></div>
+
+  <h3>C. VHDL Source Listing</h3>
+  <p>Source files in <a href="src/"><code>src/</code></a> — testbenches in <a href="tb/"><code>tb/</code></a>.</p>
+
+  <h3>D. Python Source Listing</h3>
+  <p><a href="scripts/ekg_visualizer.py"><code>ekg_visualizer.py</code></a> · <a href="scripts/simulate.do"><code>simulate.do</code></a> · <a href="scripts/requirements.txt"><code>requirements.txt</code></a></p>
+</section>
+
+<!-- ===== REFERENCES ===== -->
+<div class="section-divider"><hr></div>
+<section id="references">
+  <div class="section-label">Bibliography</div>
+  <h2>References</h2>
+  <ol>
+    <li>AD8232 Datasheet — <a href="https://www.analog.com/en/products/ad8232.html">Analog Devices</a></li>
+    <li>LTC2308 Datasheet — <a href="https://www.analog.com/en/products/ltc2308.html">Analog Devices</a></li>
+    <li>DE1-SoC User Manual — <a href="https://www.terasic.com.tw/cgi-bin/page/archive.pl?No=836">Terasic</a></li>
+    <li>Pan, J. &amp; Tompkins, W. J. (1985). "A Real-Time QRS Detection Algorithm." <em>IEEE Trans. Biomedical Eng.</em>, BME-32(3), 230–236.</li>
+  </ol>
+  <div class="placeholder text" data-type="❌ Placeholder – Incremental"><p>Add references as you consult them: DSP textbooks, FPGA application notes, open-source code, tutorials.</p></div>
+</section>
+
+<!-- ===== MASTER TODO ===== -->
+<div class="section-divider"><hr></div>
+<section id="todo">
+  <div class="section-label">Progress Tracker</div>
+  <h2>Master TODO Checklist</h2>
+
+  <div class="todo-group">
+    <div class="todo-group-title">✍️ Can Write NOW (Incrementally)</div>
+    <ul class="checklist">
+      <li>Expand <strong>Introduction</strong> with 1–2 more paragraphs</li>
+      <li>Write <strong>DC Blocking Filter</strong> theory section</li>
+      <li>Write <strong>50/60 Hz Notch Filter</strong> theory section</li>
+      <li>Write <strong>Bandpass FIR</strong> theory section</li>
+      <li>Write <strong>QRS Detection</strong> algorithm section</li>
+      <li>Expand <strong>HW/SW Tradeoffs</strong></li>
+      <li>Write <strong>DSP Pipeline</strong> module descriptions</li>
+      <li>Document <strong>JTAG Streamer</strong> protocol</li>
+      <li>Fill in <strong>BOM prices</strong></li>
+      <li>Add <strong>IP Considerations</strong> and <strong>References</strong></li>
+    </ul>
+  </div>
+
+  <div class="todo-group">
+    <div class="todo-group-title">📷 Images To Capture NOW</div>
+    <ul class="checklist">
+      <li><code>system_block_diagram</code> — Architecture diagram</li>
+      <li><code>ekg_pqrst_labeled</code> — P-QRS-T heartbeat diagram</li>
+      <li><code>wiring_photo_annotated</code> — AD8232 ↔ DE1-SoC wiring</li>
+      <li><code>wiring_diagram</code> — Fritzing/draw.io wiring guide</li>
+      <li><code>hex_display_adc_readout</code> — HEX display photo</li>
+      <li><code>adc_driver_state_machine</code> — SPI driver FSM</li>
+      <li><code>spi_timing_waveform</code> — ModelSim SPI conversion</li>
+      <li><code>dc_block_sim_waveform</code> — DC block simulation</li>
+      <li><code>notch_sim_waveform</code> — Notch filter simulation</li>
+      <li><code>bandpass_sim_waveform</code> — Bandpass FIR simulation</li>
+      <li><code>dsp_pipeline_full_sim</code> — Full pipeline</li>
+      <li><code>qrs_detection_sim</code> — QRS R-peak detection</li>
+      <li><code>dc/notch/bandpass_freq_response</code> — Frequency response plots</li>
+      <li><code>qrs_state_machine</code> — QRS FSM diagram</li>
+      <li><code>jtag_data_format</code> — Byte framing</li>
+    </ul>
+  </div>
+
+  <div class="todo-group">
+    <div class="todo-group-title">📷 Images To Capture LATER</div>
+    <ul class="checklist">
+      <li><code>full_setup_with_electrodes</code> — End-to-end setup</li>
+      <li><code>visualizer_final_screenshot</code> — Final visualizer</li>
+      <li><code>visualizer_leads_off</code> — Leads-off state</li>
+      <li><code>rtl_viewer_top</code> — Quartus RTL Viewer</li>
+      <li><code>pipeline_timing_diagram</code> — Pipeline timing</li>
+    </ul>
+  </div>
+
+  <div class="todo-group">
+    <div class="todo-group-title">🏁 Fill In AT PROJECT END</div>
+    <ul class="checklist">
+      <li>Record &amp; embed <strong>Demonstration Video</strong></li>
+      <li>Write <strong>Results</strong> — signal quality, resource usage, timing, BPM accuracy</li>
+      <li>Capture all results images (raw vs filtered, SNR chart, Quartus reports, Fmax, BPM accuracy, motion artifacts)</li>
+      <li>Write <strong>Conclusion</strong>, <strong>Results vs. Expectations</strong>, <strong>Future Work</strong></li>
+      <li>Write <strong>Work Distribution</strong> timeline</li>
+      <li>Create <code>hardware_schematic</code> for Appendix B</li>
+      <li>Update <strong>Top-Level Integration</strong> with final data path</li>
+      <li>Final proofread and polish</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <p>FPGA-EKG · Lucas Le · Summer 2026</p>
+  <p>Source on <a href="https://github.com/lucasle-28/FPGA-EKG">GitHub</a></p>
+</footer>
+
+<script>
+  // Progress bar
+  const bar = document.getElementById('progress-bar');
+
+  // Scroll-spy sections
+  const spySections = ['demo','objective','introduction','high-level-design','hardware-design','fpga-design','software-design','results','conclusion','appendix','references'];
+  const navLinks = document.querySelectorAll('.nav-links > li > a[data-section]');
+
+  function onScroll() {
+    const docH = document.documentElement.scrollHeight - window.innerHeight;
+    bar.style.width = (docH > 0 ? (window.scrollY / docH) * 100 : 0) + '%';
+
+    const trigger = window.scrollY + window.innerHeight / 3;
+    let active = null;
+    for (const id of spySections) {
+      const el = document.getElementById(id);
+      if (el && el.offsetTop <= trigger) active = id;
+    }
+    navLinks.forEach(link => link.classList.toggle('active', link.dataset.section === active));
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  // Close mobile menu on link click
+  document.querySelectorAll('.nav-links a').forEach(a => {
+    a.addEventListener('click', () => document.querySelector('.nav-links').classList.remove('open'));
+  });
+</script>
+</body>
+</html>
