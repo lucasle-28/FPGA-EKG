@@ -29,7 +29,7 @@ architecture sim of tb_fpga_ekg_top is
     signal hex3     : std_logic_vector(6 downto 0);
     signal hex4     : std_logic_vector(6 downto 0);
     signal hex5     : std_logic_vector(6 downto 0);
-    signal adc_cs_n : std_logic;
+    signal adc_convst : std_logic;
     signal adc_din  : std_logic;
     signal adc_dout : std_logic := '0';
     signal adc_sclk : std_logic;
@@ -59,7 +59,7 @@ begin
             HEX3     => hex3,
             HEX4     => hex4,
             HEX5     => hex5,
-            ADC_CS_N => adc_cs_n,
+            ADC_CONVST => adc_convst,
             ADC_DIN  => adc_din,
             ADC_DOUT => adc_dout,
             ADC_SCLK => adc_sclk,

@@ -27,7 +27,24 @@ entity sample_clock is
 end entity sample_clock;
 
 architecture rtl of sample_clock is
+    signal counter : natural range 0 to G_DIVIDER - 1 := 0;
 begin
-    -- TODO: Phase 1 implementation
-    sample_tick <= '0';
+
+    p_divider : process(clk, reset_n)
+    begin
+        if reset_n = '0' then
+            counter     <= 0;
+            sample_tick <= '0';
+
+        elsif rising_edge(clk) then
+            if counter = G_DIVIDER - 1 then
+                counter     <= 0;
+                sample_tick <= '1';   -- single-cycle pulse
+            else
+                counter     <= counter + 1;
+                sample_tick <= '0';
+            end if;
+        end if;
+    end process p_divider;
+
 end architecture rtl;

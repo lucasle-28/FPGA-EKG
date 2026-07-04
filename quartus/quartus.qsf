@@ -66,6 +66,7 @@ set_global_assignment -name VHDL_FILE ../src/qrs_detect.vhd
 set_global_assignment -name VHDL_FILE ../src/beat_segmenter.vhd
 set_global_assignment -name VHDL_FILE ../src/nn_accel.vhd
 set_global_assignment -name VHDL_FILE ../src/result_fifo.vhd
+set_global_assignment -name VHDL_FILE ../src/jtag_streamer.vhd
 
 # ============================================================================
 # Timing Constraints
@@ -230,12 +231,12 @@ set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to HEX5[4]
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to HEX5[5]
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to HEX5[6]
 
-# --- ADC (LTC2308 SPI) ---
-set_location_assignment PIN_AJ4 -to ADC_CS_N
+# --- ADC (LTC2308 SPI, Rev F) ---
+set_location_assignment PIN_AJ4 -to ADC_CONVST
 set_location_assignment PIN_AK4 -to ADC_DIN
 set_location_assignment PIN_AK3 -to ADC_DOUT
 set_location_assignment PIN_AK2 -to ADC_SCLK
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to ADC_CS_N
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to ADC_CONVST
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to ADC_DIN
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to ADC_DOUT
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to ADC_SCLK
