@@ -169,10 +169,10 @@ begin
         wait until rising_edge(clk);
 
         if sample_data = C_PATTERN_1 then
-            report "PASS: Test 1 — sample_data = 0xA5C" severity note;
+            report "PASS: Test 1 - sample_data = 0xA5C" severity note;
             v_pass_count := v_pass_count + 1;
         else
-            report "FAIL: Test 1 — expected 0xA5C, got 0x" &
+            report "FAIL: Test 1 - expected 0xA5C, got 0x" &
                    integer'image(to_integer(unsigned(sample_data)))
                 severity error;
             v_fail_count := v_fail_count + 1;
@@ -200,10 +200,10 @@ begin
         wait until rising_edge(clk);
 
         if sample_data = C_PATTERN_2 then
-            report "PASS: Test 2 — sample_data = 0x123" severity note;
+            report "PASS: Test 2 - sample_data = 0x123" severity note;
             v_pass_count := v_pass_count + 1;
         else
-            report "FAIL: Test 2 — expected 0x123, got 0x" &
+            report "FAIL: Test 2 - expected 0x123, got 0x" &
                    integer'image(to_integer(unsigned(sample_data)))
                 severity error;
             v_fail_count := v_fail_count + 1;
