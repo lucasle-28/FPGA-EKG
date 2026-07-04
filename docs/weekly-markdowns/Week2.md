@@ -24,3 +24,4 @@
 
 ## Media / Evidence
 ![EKG Visualizer Version 1](../../media/ekg-visualizer-v1-inc.png)
+![EKG Hardware Implementation](../../media/July-3-update.jpg)
