@@ -1,22 +1,22 @@
 # FPGA-EKG
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Language: VHDL](https://img.shields.io/badge/Language-VHDL-orange.svg)]()
-[![Language: Python](https://img.shields.io/badge/Language-Python-blue.svg)]()
-[![Hardware: Cyclone V](https://img.shields.io/badge/Hardware-Cyclone_V-green.svg)]()
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+![Language: VHDL](https://img.shields.io/badge/Language-VHDL-orange.svg)
+![Language: Python](https://img.shields.io/badge/Language-Python-blue.svg)
+![Hardware: Cyclone V](https://img.shields.io/badge/Hardware-Cyclone_V-green.svg)
 
 Using an FPGA to do DSP on electrodes to simulate an EKG's functions.
 
 ## Project Structure
-- **[src/]** — VHDL source files (ADC driver, DSP filters, main EKG logic)
-- **[tb/]** — VHDL testbenches for behavioral simulation
-- **[scripts/]** — Python EKG Visualizer and QuestaSim setup scripts (`simulate.do`)
-- **[quartus/]** — Quartus Prime project files (`.qpf`, `.qsf`)
-- **[constraints/]** — FPGA pin assignments and timing constraints (`.sdc`)
-- **[docs/]** — Engineering logs, design decisions, and weekly reports
-- **[diagrams/]** — Architecture, data flow, and timing diagrams
-- **[media/]** — Screenshots, GIFs, and board photos
-- **[results/]** — Accuracy metrics, resource usage, latency, and plots
+- **[src/](src/)** — VHDL source files (ADC driver, DSP filters, main EKG logic)
+- **[tb/](tb/)** — VHDL testbenches for behavioral simulation
+- **[scripts/](scripts/)** — Python EKG Visualizer and QuestaSim setup scripts (`simulate.do`)
+- **[quartus/](quartus/)** — Quartus Prime project files (`.qpf`, `.qsf`)
+- **[constraints/](constraints/)** — FPGA pin assignments and timing constraints (`.sdc`)
+- **[docs/](docs/)** — Engineering logs, design decisions, and weekly reports
+- **[diagrams/](diagrams/)** — Architecture, data flow, and timing diagrams
+- **[media/](media/)** — Screenshots, GIFs, and board photos
+- **[results/](results/)** — Accuracy metrics, resource usage, latency, and plots
 
 ## Requirements
 
