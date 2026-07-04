@@ -20,6 +20,7 @@ import ctypes
 import time
 import collections
 import numpy as np
+import signal
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -178,11 +179,11 @@ class JTAGReaderThread(QThread):
 
     def run(self):
         print("[JTAG] Thread starting")
-        jtag = JTAGAtlantic()
+        self.jtag = JTAGAtlantic()
         try:
             print("[JTAG] Opening connection...")
             self.connection_status.emit(False, "Connecting…")
-            jtag.open(instance=0)
+            self.jtag.open(instance=0)
             print("[JTAG] Connection opened successfully")
             self.connection_status.emit(True, "Connected")
         except (FileNotFoundError, ConnectionError) as e:
@@ -196,7 +197,7 @@ class JTAGReaderThread(QThread):
 
         while self._running:
             try:
-                data = jtag.read(512)
+                data = self.jtag.read(512)
             except ConnectionError:
                 self.connection_status.emit(False, "Connection lost")
                 break
@@ -220,7 +221,7 @@ class JTAGReaderThread(QThread):
             if samples:
                 self.samples_received.emit(samples)
 
-        jtag.close()
+        self.jtag.close()
         self.connection_status.emit(False, "Disconnected")
 
 
@@ -499,6 +500,17 @@ class EKGVisualizer(QMainWindow):
 # =============================================================================
 def main():
     app = QApplication(sys.argv)
+    
+    window = EKGVisualizer()
+
+    # Handle Ctrl+C gracefully by closing the window (which triggers thread cleanup)
+    signal.signal(signal.SIGINT, lambda sig, frame: window.close())
+
+    # Required for Python to actually process the signal (wake up the event loop)
+    timer = QTimer()
+    timer.start(500)
+    timer.timeout.connect(lambda: None)
+
     app.setStyle("Fusion")
 
     # Dark palette for the entire app
@@ -513,7 +525,6 @@ def main():
     palette.setColor(QPalette.ColorRole.Highlight, QColor(COLORS["accent"]))
     app.setPalette(palette)
 
-    window = EKGVisualizer()
     window.show()
     sys.exit(app.exec())
 
