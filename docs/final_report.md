@@ -281,6 +281,7 @@ The AD8232 breakout board connects to the DE1-SoC via the onboard ADC input head
 |---|---|---|---|---|
 | **LO+** | `GPIO_0[0]` | JP1 Pin 1 | `PIN_AC18` | Leads-off detection (+) |
 | **LO-** | `GPIO_0[1]` | JP1 Pin 2 | `PIN_Y17` | Leads-off detection (−) |
+| — | `GPIO_0[2]` | JP1 Pin 3 | `PIN_AD17` | 3.3V Power / Output |
 
 **Onboard ADC (LTC2308 SPI) — directly wired on DE1-SoC:**
 

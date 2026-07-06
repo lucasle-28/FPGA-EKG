@@ -224,7 +224,10 @@ begin
     HEX4 <= (others => '1');
     HEX5 <= (others => '1');
 
+    -- JP1 Pin 3 (GPIO_0(2)) driven to 3.3V output
+    GPIO_0(2) <= '1';
+
     -- Unused GPIO pins driven to high-Z
-    GPIO_0(35 downto 2) <= (others => 'Z');
+    GPIO_0(35 downto 3) <= (others => 'Z');
 
 end architecture rtl;

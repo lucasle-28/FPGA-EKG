@@ -37,6 +37,7 @@ The AD8232 provides two digital leads-off detection outputs. These are active-hi
 |---|---|---|---|---|
 | **LO+** | `GPIO_0[0]` | JP1 Pin 1 | `PIN_AC18` | Leads-off detection (+) |
 | **LO-** | `GPIO_0[1]` | JP1 Pin 2 | `PIN_Y17` | Leads-off detection (−) |
+| — | `GPIO_0[2]` | JP1 Pin 3 | `PIN_AD17` | 3.3V Power / Output |
 
 > All GPIO pins operate at **3.3V LVTTL** — this is compatible with the AD8232's logic levels.
 
