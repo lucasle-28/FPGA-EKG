@@ -32,17 +32,20 @@ vcom -work work src/fpga_ekg_top.vhd
 echo "Compiling testbenches..."
 vcom -work work tb/tb_adc_spi_driver.vhd
 vcom -work work tb/tb_fpga_ekg_top.vhd
+vcom -work work tb/tb_notch_5060.vhd
+vcom -work work tb/tb_dc_block.vhd
+vcom -work work tb/tb_bandpass_fir.vhd
 
 echo "===================================================================="
 echo " Compilation Successful!"
 echo "===================================================================="
-echo " To run the ADC SPI Driver testbench (GUI mode):"
-echo "   vsim work.tb_adc_spi_driver"
-echo "   add wave -r /*"
-echo "   run -all"
+echo " Self-checking filter testbenches (batch mode):"
+echo "   vsim -c work.tb_notch_5060   -do {run -all; quit}"
+echo "   vsim -c work.tb_dc_block     -do {run -all; quit}"
+echo "   vsim -c work.tb_bandpass_fir -do {run -all; quit}"
 echo ""
-echo " To run the Top-Level testbench (GUI mode):"
-echo "   vsim work.tb_fpga_ekg_top"
+echo " Interactive testbenches (GUI mode):"
+echo "   vsim work.tb_adc_spi_driver   (or work.tb_fpga_ekg_top)"
 echo "   add wave -r /*"
 echo "   run -all"
 echo "===================================================================="

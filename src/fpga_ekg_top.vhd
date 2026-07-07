@@ -77,10 +77,14 @@ architecture rtl of fpga_ekg_top is
     -- 50 MHz / 2 = 25 MHz toggle → 1 Hz blink (25_000_000 counts per toggle)
     constant C_BLINK_MAX : natural := 25_000_000 - 1;
 
+    -- LED pulse stretcher: 2 ms at 50 MHz so single-cycle strobes are visible
+    constant C_STRETCH_MAX : natural := 100_000 - 1;
+
     -- ========================================================================
     -- Phase 0: blink signals
     -- ========================================================================
     signal reset_n       : std_logic;
+    signal reset_sync    : std_logic_vector(1 downto 0) := (others => '0');
     signal blink_counter : natural range 0 to C_BLINK_MAX := 0;
     signal blink_led     : std_logic := '0';
 
@@ -125,12 +129,27 @@ architecture rtl of fpga_ekg_top is
     signal filtered_12bit  : std_logic_vector(11 downto 0);
     signal filtered_valid  : std_logic;
 
+    -- Stretched adc_valid for LED visibility
+    signal adc_valid_led   : std_logic := '0';
+    signal stretch_cnt     : natural range 0 to C_STRETCH_MAX := 0;
+
 begin
 
     -- ========================================================================
-    -- Reset
+    -- Reset: KEY(0) active-low, pressed = reset.
+    -- 2-FF synchronizer: asserts asynchronously, de-asserts synchronously
+    -- to CLOCK_50 so all logic leaves reset on the same clock edge.
     -- ========================================================================
-    reset_n <= KEY(0);  -- KEY(0) active-low: pressed = reset
+    p_reset_sync : process(CLOCK_50, KEY)
+    begin
+        if KEY(0) = '0' then
+            reset_sync <= (others => '0');
+        elsif rising_edge(CLOCK_50) then
+            reset_sync <= reset_sync(0) & '1';
+        end if;
+    end process p_reset_sync;
+
+    reset_n <= reset_sync(1);
 
     -- ========================================================================
     -- AD8232 leads-off mapping
@@ -309,6 +328,28 @@ begin
     end process p_latch;
 
     -- ========================================================================
+    -- Pulse stretcher: adc_valid is a single 20 ns pulse (invisible on an
+    -- LED). Stretch each pulse to 2 ms so LEDR(8) is visibly lit while
+    -- samples are flowing.
+    -- ========================================================================
+    p_stretch : process(CLOCK_50, reset_n)
+    begin
+        if reset_n = '0' then
+            stretch_cnt   <= 0;
+            adc_valid_led <= '0';
+        elsif rising_edge(CLOCK_50) then
+            if adc_valid = '1' then
+                stretch_cnt   <= C_STRETCH_MAX;
+                adc_valid_led <= '1';
+            elsif stretch_cnt > 0 then
+                stretch_cnt <= stretch_cnt - 1;
+            else
+                adc_valid_led <= '0';
+            end if;
+        end if;
+    end process p_stretch;
+
+    -- ========================================================================
     -- JTAG UART streamer: sends FILTERED samples to PC over USB-Blaster
     -- ========================================================================
     u_jtag_streamer : entity work.jtag_streamer
@@ -338,8 +379,8 @@ begin
     -- Unused LEDs
     LEDR(7 downto 4) <= (others => '0');
 
-    -- ADC sample_valid blink (very brief flash on each sample)
-    LEDR(8) <= adc_valid;
+    -- ADC sampling activity (stretched adc_valid, lit while samples flow)
+    LEDR(8) <= adc_valid_led;
 
     -- Leads-off warning: lights up if either electrode is disconnected
     LEDR(9) <= leads_off;
@@ -358,6 +399,9 @@ begin
     HEX3 <= (others => '1');
     HEX4 <= (others => '1');
     HEX5 <= (others => '1');
+
+    -- LO+/LO- inputs: explicitly tri-state our drivers so the AD8232 owns them
+    GPIO_0(1 downto 0) <= (others => 'Z');
 
     -- JP1 Pin 3 (GPIO_0(2)) driven to 3.3V output
     GPIO_0(2) <= '1';

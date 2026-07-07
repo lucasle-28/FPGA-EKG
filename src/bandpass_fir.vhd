@@ -12,6 +12,13 @@
 -- Sequential MAC FSM: processes one tap pair per clock cycle.
 -- At 50 MHz / 360 Hz = 138889 clocks per sample, 17 MAC cycles is plenty.
 --
+-- KNOWN LIMITATION: with 33 taps at fs=360 Hz, the Hamming-window transition
+-- width (~18 Hz) is wider than the 5 Hz high-pass edge, so frequencies below
+-- 5 Hz are NOT attenuated (DC gain ~1.0). This is acceptable in-system
+-- because dc_block precedes this filter; effectively this stage acts as a
+-- ~15-20 Hz low-pass. Use >= 128 taps if true 5 Hz rejection is needed.
+-- See scripts/golden_model.py for the measured response.
+--
 -- Phase 2 implementation.
 -- ============================================================================
 

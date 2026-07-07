@@ -52,8 +52,6 @@ COLORS = {
 SAMPLE_RATE_HZ = 360
 ADC_BITS = 12
 ADC_MAX = (1 << ADC_BITS) - 1
-DISPLAY_SECONDS = 5
-DISPLAY_SAMPLES = SAMPLE_RATE_HZ * DISPLAY_SECONDS  # 1800 samples on screen
 
 
 # =============================================================================
@@ -380,9 +378,12 @@ class EKGVisualizer(QMainWindow):
         self.trace_color = COLORS["trace"]
 
         # --- Data buffers ---
-        self.sample_buffer = collections.deque(maxlen=DISPLAY_SAMPLES)
+        # Buffer length must match the visible window, otherwise the newest
+        # samples sit beyond the X range and the plot shows stale data.
+        buf_len = int(SAMPLE_RATE_HZ * self.display_seconds)
+        self.sample_buffer = collections.deque(maxlen=buf_len)
         # Pre-fill so the plot starts full-width
-        for _ in range(DISPLAY_SAMPLES):
+        for _ in range(buf_len):
             self.sample_buffer.append(ADC_MAX // 2)
         self.total_samples = 0
         self.bpm_calc = BPMCalculator(SAMPLE_RATE_HZ)

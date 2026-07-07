@@ -9,7 +9,7 @@ Using an FPGA to do DSP on electrodes to simulate an EKG's functions.
 
 ## Project Structure
 - **[src/](src/)** — VHDL source files (ADC driver, DSP filters, main EKG logic)
-- **[tb/](tb/)** — VHDL testbenches for behavioral simulation
+- **[tb/](tb/)** — VHDL testbenches (self-checking DSP filter tests + ADC/top-level sims)
 - **[scripts/](scripts/)** — Python EKG Visualizer and QuestaSim setup scripts (`simulate.do`)
 - **[quartus/](quartus/)** — Quartus Prime project files (`.qpf`, `.qsf`)
 - **[constraints/](constraints/)** — FPGA pin assignments and timing constraints (`.sdc`)
@@ -39,6 +39,8 @@ python scripts/ekg_visualizer.py
 ```
 
 For more detailed instructions on synthesizing the FPGA and running VHDL simulations, check the [usage guide](docs/usage.md).
+
+To verify the DSP filters, compile with `do scripts/simulate.do` in QuestaSim, then run the self-checking testbenches (`tb_notch_5060`, `tb_dc_block`, `tb_bandpass_fir`). Expected filter responses can be printed with `python scripts/golden_model.py`.
 
 ## Useful Resources
 - [Weekly Progress Reports](docs/weekly-markdowns/)
