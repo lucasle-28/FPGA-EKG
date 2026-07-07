@@ -77,7 +77,7 @@ begin
         generic map (
             INSTANCE_ID             => 0,
             LOG2_RXFIFO_DEPTH       => 2,       -- 4-byte RX FIFO (unused)
-            LOG2_TXFIFO_DEPTH       => 8,       -- 256-byte TX FIFO
+            LOG2_TXFIFO_DEPTH       => 12,      -- 4096-byte TX FIFO (holds ~5.6 seconds of data)
             SLD_AUTO_INSTANCE_INDEX => "YES"
         )
         port map (

@@ -102,6 +102,29 @@ architecture rtl of fpga_ekg_top is
     -- Latched display value (updated on each valid sample)
     signal display_data  : std_logic_vector(11 downto 0) := (others => '0');
 
+    -- ========================================================================
+    -- Phase 2: Filter pipeline signals
+    -- ========================================================================
+    -- ADC → Q1.15 conversion
+    signal adc_q15       : std_logic_vector(15 downto 0);  -- ADC in Q1.15 signed
+    signal adc_q15_valid : std_logic;
+
+    -- Notch filter stage
+    signal notch_out       : std_logic_vector(15 downto 0);
+    signal notch_valid     : std_logic;
+
+    -- DC block stage
+    signal dcblock_out     : std_logic_vector(15 downto 0);
+    signal dcblock_valid   : std_logic;
+
+    -- Bandpass FIR stage (for QRS detection, not displayed)
+    signal bandpass_out    : std_logic_vector(15 downto 0);
+    signal bandpass_valid  : std_logic;
+
+    -- Filtered signal converted back to 12-bit unsigned for JTAG
+    signal filtered_12bit  : std_logic_vector(11 downto 0);
+    signal filtered_valid  : std_logic;
+
 begin
 
     -- ========================================================================
@@ -166,28 +189,134 @@ begin
         );
 
     -- ========================================================================
-    -- Latch display value on each valid ADC sample
+    -- Phase 2: ADC 12-bit unsigned → Q1.15 signed conversion
+    -- ========================================================================
+    -- Subtract mid-scale (2048) to center at zero, then shift left by 4
+    -- to fill the 16-bit range.
+    -- signed_16 = (unsigned_12 - 2048) << 4
+    -- ========================================================================
+    p_adc_to_q15 : process(CLOCK_50, reset_n)
+        variable centered : signed(12 downto 0);  -- 13-bit to hold subtraction result
+    begin
+        if reset_n = '0' then
+            adc_q15       <= (others => '0');
+            adc_q15_valid <= '0';
+        elsif rising_edge(CLOCK_50) then
+            adc_q15_valid <= '0';
+            if adc_valid = '1' then
+                -- Subtract 2048 (mid-scale) to center at zero
+                centered := signed('0' & adc_data) - to_signed(2048, 13);
+                -- Shift left 4 to scale 12-bit to 16-bit range
+                adc_q15 <= std_logic_vector(
+                    shift_left(resize(centered, 16), 4)
+                );
+                adc_q15_valid <= '1';
+            end if;
+        end if;
+    end process p_adc_to_q15;
+
+    -- ========================================================================
+    -- Phase 2: Notch filter (50/60 Hz mains rejection)
+    -- ========================================================================
+    u_notch : entity work.notch_5060
+        port map (
+            clk          => CLOCK_50,
+            reset_n      => reset_n,
+            sel_60hz     => SW(0),       -- SW(0)=0: 50 Hz, SW(0)=1: 60 Hz
+            sample_in    => adc_q15,
+            sample_valid => adc_q15_valid,
+            sample_out   => notch_out,
+            out_valid    => notch_valid
+        );
+
+    -- ========================================================================
+    -- Phase 2: DC block (baseline wander removal, ~0.5 Hz HPF)
+    -- ========================================================================
+    u_dc_block : entity work.dc_block
+        port map (
+            clk          => CLOCK_50,
+            reset_n      => reset_n,
+            sample_in    => notch_out,
+            sample_valid => notch_valid,
+            sample_out   => dcblock_out,
+            out_valid    => dcblock_valid
+        );
+
+    -- ========================================================================
+    -- Phase 2: Bandpass FIR (5-15 Hz, for QRS detection only)
+    -- ========================================================================
+    u_bandpass : entity work.bandpass_fir
+        generic map (
+            G_NUM_TAPS => 33
+        )
+        port map (
+            clk          => CLOCK_50,
+            reset_n      => reset_n,
+            sample_in    => dcblock_out,
+            sample_valid => dcblock_valid,
+            sample_out   => bandpass_out,
+            out_valid    => bandpass_valid
+        );
+
+    -- ========================================================================
+    -- Phase 2: Q1.15 signed → 12-bit unsigned conversion (for JTAG stream)
+    -- ========================================================================
+    -- Reverse of the input conversion:
+    --   unsigned_12 = (signed_16 >> 4) + 2048
+    -- Clamped to [0, 4095].
+    -- ========================================================================
+    p_q15_to_12bit : process(CLOCK_50, reset_n)
+        variable shifted  : signed(15 downto 0);
+        variable restored : signed(15 downto 0);  -- after adding 2048
+    begin
+        if reset_n = '0' then
+            filtered_12bit <= (others => '0');
+            filtered_valid <= '0';
+        elsif rising_edge(CLOCK_50) then
+            filtered_valid <= '0';
+            if dcblock_valid = '1' then
+                -- Right-shift by 4 to undo the input scaling
+                shifted := shift_right(signed(dcblock_out), 4);
+                -- Add back mid-scale offset
+                restored := shifted + to_signed(2048, 16);
+
+                -- Clamp to 12-bit unsigned range [0, 4095]
+                if restored < 0 then
+                    filtered_12bit <= (others => '0');
+                elsif restored > 4095 then
+                    filtered_12bit <= (others => '1');
+                else
+                    filtered_12bit <= std_logic_vector(restored(11 downto 0));
+                end if;
+
+                filtered_valid <= '1';
+            end if;
+        end if;
+    end process p_q15_to_12bit;
+
+    -- ========================================================================
+    -- Latch display value on each filtered sample
     -- ========================================================================
     p_latch : process(CLOCK_50, reset_n)
     begin
         if reset_n = '0' then
             display_data <= (others => '0');
         elsif rising_edge(CLOCK_50) then
-            if adc_valid = '1' then
-                display_data <= adc_data;
+            if filtered_valid = '1' then
+                display_data <= filtered_12bit;
             end if;
         end if;
     end process p_latch;
 
     -- ========================================================================
-    -- JTAG UART streamer: sends ADC samples to PC over USB-Blaster
+    -- JTAG UART streamer: sends FILTERED samples to PC over USB-Blaster
     -- ========================================================================
     u_jtag_streamer : entity work.jtag_streamer
         port map (
             clk          => CLOCK_50,
             reset_n      => reset_n,
-            sample_data  => adc_data,
-            sample_valid => adc_valid
+            sample_data  => filtered_12bit,
+            sample_valid => filtered_valid
         );
 
     -- ========================================================================
@@ -200,8 +329,14 @@ begin
     -- ADC busy indicator
     LEDR(1) <= adc_busy;
 
+    -- Filter active indicator
+    LEDR(2) <= filtered_valid;
+
+    -- Notch filter mode: on = 60 Hz, off = 50 Hz
+    LEDR(3) <= SW(0);
+
     -- Unused LEDs
-    LEDR(7 downto 2) <= (others => '0');
+    LEDR(7 downto 4) <= (others => '0');
 
     -- ADC sample_valid blink (very brief flash on each sample)
     LEDR(8) <= adc_valid;
@@ -210,7 +345,7 @@ begin
     LEDR(9) <= leads_off;
 
     -- ========================================================================
-    -- 7-segment displays: show 12-bit ADC value as 3 hex digits
+    -- 7-segment displays: show filtered 12-bit value as 3 hex digits
     --   HEX2 = upper nibble [11:8]
     --   HEX1 = middle nibble [7:4]
     --   HEX0 = lower nibble [3:0]

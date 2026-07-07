@@ -21,10 +21,11 @@ import time
 import collections
 import numpy as np
 import signal
+import queue
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QFrame, QSizePolicy
+    QLabel, QFrame, QSizePolicy, QDialog, QComboBox, QPushButton, QCheckBox, QFormLayout, QSlider
 )
 from PyQt6.QtCore import QThread, pyqtSignal, QTimer, Qt
 from PyQt6.QtGui import QFont, QColor, QPalette, QFontDatabase
@@ -35,17 +36,17 @@ import pyqtgraph as pg
 # Theme
 # =============================================================================
 COLORS = {
-    "bg":         "#0d1117",
+    "bg":         "#000000",             # Pitch black background
     "panel":      "#161b22",
     "border":     "#30363d",
-    "grid":       "#21262d",
-    "trace":      "#00d4aa",
+    "grid":       "#22252A",             # Subtle grid lines
+    "trace":      "#00FF9D",             # Vibrant medical green for the ECG trace
     "text":       "#c9d1d9",
     "text_dim":   "#8b949e",
-    "accent":     "#58a6ff",
+    "accent":     "#F43F5E",             # Rose red for the heart icon
     "danger":     "#f85149",
-    "success":    "#3fb950",
-    "bpm_color":  "#ff7b72",
+    "success":    "#10B981",             # Emerald green for connected status
+    "bpm_color":  "#F43F5E",
 }
 
 SAMPLE_RATE_HZ = 360
@@ -164,14 +165,14 @@ class JTAGAtlantic:
 # JTAG Reader Thread
 # =============================================================================
 class JTAGReaderThread(QThread):
-    """Background thread that reads from the JTAG UART and emits decoded samples."""
+    """Background thread that reads from the JTAG UART and puts decoded samples in a queue."""
 
-    samples_received = pyqtSignal(list)       # list of int (12-bit values)
     connection_status = pyqtSignal(bool, str)  # (connected, message)
 
-    def __init__(self, parent=None):
+    def __init__(self, data_queue, parent=None):
         super().__init__(parent)
         self._running = True
+        self.data_queue = data_queue
 
     def stop(self):
         self._running = False
@@ -219,7 +220,7 @@ class JTAGReaderThread(QThread):
                 # else: orphan data byte, discard (resync)
 
             if samples:
-                self.samples_received.emit(samples)
+                self.data_queue.put(samples)
 
         self.jtag.close()
         self.connection_status.emit(False, "Disconnected")
@@ -271,6 +272,97 @@ class BPMCalculator:
         return self.bpm
 
 
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None, current_settings=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setFixedSize(320, 260)
+        self.setStyleSheet(f"background-color: {COLORS['panel']}; color: {COLORS['text']};")
+
+        self.current_settings = current_settings or {}
+        layout = QFormLayout(self)
+        
+        # Sweep Speed Slider (0.1s to 2.0s)
+        self.sweep_slider = QSlider(Qt.Orientation.Horizontal)
+        self.sweep_slider.setMinimum(1)   # 0.1s
+        self.sweep_slider.setMaximum(20)  # 2.0s
+        current_val = int(self.current_settings.get('display_seconds', 2.0) * 10)
+        self.sweep_slider.setValue(current_val)
+        self.sweep_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.sweep_slider.setTickInterval(1)
+        self.sweep_slider.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
+                border: 1px solid {COLORS['border']};
+                height: 8px;
+                background: {COLORS['bg']};
+                border-radius: 4px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {COLORS['trace']};
+                border: 1px solid {COLORS['trace']};
+                width: 16px;
+                margin: -4px 0;
+                border-radius: 8px;
+            }}
+        """)
+        
+        self.lbl_sweep = QLabel(f"{self.sweep_slider.value() / 10.0:.1f}s")
+        self.lbl_sweep.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        self.lbl_sweep.setFixedWidth(40)
+        
+        sweep_layout = QHBoxLayout()
+        sweep_layout.addWidget(self.sweep_slider)
+        sweep_layout.addWidget(self.lbl_sweep)
+        
+        self.sweep_slider.valueChanged.connect(lambda v: self.lbl_sweep.setText(f"{v / 10.0:.1f}s"))
+        
+        layout.addRow("Sweep Speed:", sweep_layout)
+
+        # Sensitivity (Y-Range)
+        self.cb_sens = QComboBox()
+        self.cb_sens.setStyleSheet(f"background-color: {COLORS['bg']}; color: {COLORS['text']};")
+        self.cb_sens.addItem("1.0 mV", 1.0)
+        self.cb_sens.addItem("2.0 mV", 2.0)
+        self.cb_sens.addItem("3.0 mV", 3.0)
+        self.cb_sens.addItem("5.0 mV", 5.0)
+        idx = self.cb_sens.findData(self.current_settings.get("y_range", 3.0))
+        if idx >= 0:
+            self.cb_sens.setCurrentIndex(idx)
+        layout.addRow("Sensitivity:", self.cb_sens)
+
+        # Grid
+        self.cb_grid = QCheckBox("Show Grid")
+        self.cb_grid.setChecked(self.current_settings.get("grid_visible", True))
+        layout.addRow("", self.cb_grid)
+
+        # Trace Color
+        self.cb_color = QComboBox()
+        self.cb_color.setStyleSheet(f"background-color: {COLORS['bg']}; color: {COLORS['text']};")
+        self.cb_color.addItem("Medical Green", "#00FF9D")
+        self.cb_color.addItem("Classic Green", "#00d4aa")
+        self.cb_color.addItem("Cyan", "#00ffff")
+        self.cb_color.addItem("White", "#ffffff")
+        idx = self.cb_color.findData(self.current_settings.get("trace_color", COLORS["trace"]))
+        if idx >= 0:
+            self.cb_color.setCurrentIndex(idx)
+        layout.addRow("Trace Color:", self.cb_color)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_apply = QPushButton("Apply")
+        btn_apply.setStyleSheet(f"background-color: {COLORS['trace']}; color: #000; font-weight: bold; padding: 4px 16px;")
+        btn_apply.clicked.connect(self.accept)
+        btn_layout.addWidget(btn_apply)
+        layout.addRow("", btn_layout)
+
+    def get_settings(self):
+        return {
+            "display_seconds": self.sweep_slider.value() / 10.0,
+            "y_range": self.cb_sens.currentData(),
+            "grid_visible": self.cb_grid.isChecked(),
+            "trace_color": self.cb_color.currentData()
+        }
+
 # =============================================================================
 # Main Window
 # =============================================================================
@@ -281,6 +373,12 @@ class EKGVisualizer(QMainWindow):
         self.setMinimumSize(960, 520)
         self.resize(1200, 640)
 
+        # Settings state
+        self.display_seconds = 2.0
+        self.y_range = 3.0
+        self.grid_visible = True
+        self.trace_color = COLORS["trace"]
+
         # --- Data buffers ---
         self.sample_buffer = collections.deque(maxlen=DISPLAY_SAMPLES)
         # Pre-fill so the plot starts full-width
@@ -288,14 +386,19 @@ class EKGVisualizer(QMainWindow):
             self.sample_buffer.append(ADC_MAX // 2)
         self.total_samples = 0
         self.bpm_calc = BPMCalculator(SAMPLE_RATE_HZ)
+        self.data_queue = queue.Queue()
 
         # --- Build UI ---
         self._apply_theme()
         self._build_ui()
 
+        # Timer to drain the queue
+        self.drain_timer = QTimer()
+        self.drain_timer.timeout.connect(self._drain_queue)
+        self.drain_timer.start(16)  # ~60 Hz
+
         # --- JTAG reader thread ---
-        self.reader = JTAGReaderThread()
-        self.reader.samples_received.connect(self._on_samples)
+        self.reader = JTAGReaderThread(self.data_queue, self)
         self.reader.connection_status.connect(self._on_connection_status)
         self.reader.start()
 
@@ -360,6 +463,25 @@ class EKGVisualizer(QMainWindow):
 
         h_layout.addStretch()
 
+        btn_settings = QPushButton("⚙ Settings")
+        btn_settings.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLORS['bg']};
+                color: {COLORS['text']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {COLORS['border']};
+            }}
+        """)
+        btn_settings.clicked.connect(self.open_settings)
+        h_layout.addWidget(btn_settings)
+
+        h_layout.addSpacing(16)
+
         # Connection indicator
         self.conn_dot = QLabel("●")
         self.conn_dot.setFont(QFont("Segoe UI", 12))
@@ -390,9 +512,9 @@ class EKGVisualizer(QMainWindow):
         pg.setConfigOptions(antialias=True, background=COLORS["bg"])
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setBackground(COLORS["bg"])
-        self.plot_widget.showGrid(x=True, y=True, alpha=0.15)
-        self.plot_widget.setYRange(0, ADC_MAX, padding=0.05)
-        self.plot_widget.setXRange(0, DISPLAY_SAMPLES, padding=0)
+        self.plot_widget.showGrid(x=self.grid_visible, y=self.grid_visible, alpha=0.15)
+        self.plot_widget.setYRange(2048 - (self.y_range * 500), 2048 + (self.y_range * 500), padding=0.05)
+        self.plot_widget.setXRange(0, int(SAMPLE_RATE_HZ * self.display_seconds), padding=0)
         self.plot_widget.hideButtons()
         self.plot_widget.setMouseEnabled(x=False, y=False)
         self.plot_widget.setMenuEnabled(False)
@@ -406,7 +528,7 @@ class EKGVisualizer(QMainWindow):
 
         # X axis: time in seconds
         x_axis = self.plot_widget.getAxis("bottom")
-        x_ticks = [(i * SAMPLE_RATE_HZ, f"{i}s") for i in range(DISPLAY_SECONDS + 1)]
+        x_ticks = [(i * SAMPLE_RATE_HZ, f"{i}s") for i in range(int(self.display_seconds) + 1)]
         x_axis.setTicks([x_ticks])
         x_axis.setLabel("Time")
 
@@ -415,7 +537,7 @@ class EKGVisualizer(QMainWindow):
         y_axis.setLabel("ADC Value")
 
         # Waveform trace
-        trace_pen = pg.mkPen(color=COLORS["trace"], width=2)
+        trace_pen = pg.mkPen(color=self.trace_color, width=2)
         self.trace_curve = self.plot_widget.plot([], [], pen=trace_pen)
 
         layout.addWidget(self.plot_widget, stretch=1)
@@ -451,6 +573,56 @@ class EKGVisualizer(QMainWindow):
     # -------------------------------------------------------------------------
     # Slots
     # -------------------------------------------------------------------------
+    def open_settings(self):
+        current = {
+            "display_seconds": self.display_seconds,
+            "y_range": self.y_range,
+            "grid_visible": self.grid_visible,
+            "trace_color": self.trace_color
+        }
+        dlg = SettingsDialog(self, current)
+        if dlg.exec():
+            self.apply_settings(dlg.get_settings())
+
+    def apply_settings(self, settings):
+        self.display_seconds = settings["display_seconds"]
+        self.y_range = settings["y_range"]
+        self.grid_visible = settings["grid_visible"]
+        self.trace_color = settings["trace_color"]
+
+        self.plot_widget.showGrid(x=self.grid_visible, y=self.grid_visible, alpha=0.15)
+        self.plot_widget.setYRange(2048 - (self.y_range * 500), 2048 + (self.y_range * 500), padding=0.05)
+        
+        new_samples = int(SAMPLE_RATE_HZ * self.display_seconds)
+        self.plot_widget.setXRange(0, new_samples, padding=0)
+        
+        x_axis = self.plot_widget.getAxis("bottom")
+        x_ticks = [(i * SAMPLE_RATE_HZ, f"{i}s") for i in range(int(self.display_seconds) + 1)]
+        x_axis.setTicks([x_ticks])
+        
+        trace_pen = pg.mkPen(color=self.trace_color, width=2)
+        self.trace_curve.setPen(trace_pen)
+        
+        if new_samples != self.sample_buffer.maxlen:
+            old_data = list(self.sample_buffer)
+            self.sample_buffer = collections.deque(maxlen=new_samples)
+            if len(old_data) > new_samples:
+                self.sample_buffer.extend(old_data[-new_samples:])
+            else:
+                self.sample_buffer.extend([ADC_MAX // 2] * (new_samples - len(old_data)))
+                self.sample_buffer.extend(old_data)
+
+    def _drain_queue(self):
+        samples = []
+        while True:
+            try:
+                samples.extend(self.data_queue.get_nowait())
+            except queue.Empty:
+                break
+        
+        if samples:
+            self._on_samples(samples)
+
     def _on_samples(self, samples: list):
         """Receive decoded 12-bit samples from the reader thread."""
         self.sample_buffer.extend(samples)
