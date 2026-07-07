@@ -28,8 +28,10 @@ from PyQt6.QtWidgets import (
     QLabel, QFrame, QSizePolicy, QDialog, QComboBox, QPushButton, QCheckBox, QFormLayout, QSlider
 )
 from PyQt6.QtCore import QThread, pyqtSignal, QTimer, Qt
-from PyQt6.QtGui import QFont, QColor, QPalette, QFontDatabase
+from PyQt6.QtGui import QFont, QColor, QPalette, QFontDatabase, QShortcut, QKeySequence
 import pyqtgraph as pg
+
+from bpm import BPMCalculator
 
 
 # =============================================================================
@@ -225,49 +227,9 @@ class JTAGReaderThread(QThread):
 
 
 # =============================================================================
-# BPM Calculator
+# BPM Calculator lives in bpm.py (imported above) so it can be unit tested
+# without the Qt / display dependencies. See scripts/test_bpm.py.
 # =============================================================================
-class BPMCalculator:
-    """Simple threshold-based peak detector for heart rate estimation."""
-
-    def __init__(self, sample_rate=360):
-        self.sample_rate = sample_rate
-        # Minimum interval between beats: 200 ms (= max 300 BPM)
-        self.refractory_samples = int(sample_rate * 0.200)
-        self.since_last_peak = 0
-        self.peak_intervals = collections.deque(maxlen=8)
-        self.running_max = 0.0
-        self.running_min = float(ADC_MAX)
-        self.bpm = 0.0
-        self.beat_detected = False  # True for one update cycle after a beat
-
-    def process(self, samples: list):
-        """Feed new samples and return current BPM estimate."""
-        self.beat_detected = False
-
-        for s in samples:
-            # Exponential moving average for dynamic range tracking
-            self.running_max = max(self.running_max * 0.999, s)
-            self.running_min = min(self.running_min * 1.001, s)
-
-            amplitude = self.running_max - self.running_min
-            threshold = self.running_min + amplitude * 0.65
-
-            self.since_last_peak += 1
-
-            if s > threshold and self.since_last_peak > self.refractory_samples:
-                if amplitude > 50:  # Ignore noise floor
-                    self.peak_intervals.append(self.since_last_peak)
-                    self.since_last_peak = 0
-                    self.beat_detected = True
-
-        if len(self.peak_intervals) >= 2:
-            avg_interval = np.mean(list(self.peak_intervals))
-            self.bpm = (self.sample_rate / avg_interval) * 60.0
-        else:
-            self.bpm = 0.0
-
-        return self.bpm
 
 
 class SettingsDialog(QDialog):
@@ -389,9 +351,30 @@ class EKGVisualizer(QMainWindow):
         self.bpm_calc = BPMCalculator(SAMPLE_RATE_HZ)
         self.data_queue = queue.Queue()
 
+        # Optional raw-sample recorder for offline BPM tuning. Enable with a
+        # command-line flag (preferred, most robust):
+        #   python scripts/ekg_visualizer.py --record scripts/capture_rest.csv
+        # or the EKG_RECORD environment variable. Every decoded sample is
+        # appended, one per line.
+        self._rec_file = None
+        rec_path = None
+        if "--record" in sys.argv:
+            i = sys.argv.index("--record")
+            if i + 1 < len(sys.argv):
+                rec_path = sys.argv[i + 1]
+        rec_path = rec_path or os.environ.get("EKG_RECORD")
+        if rec_path:
+            self._rec_file = open(rec_path, "w", buffering=1)  # line-buffered
+            print(f"[REC] Recording raw samples to {rec_path}", flush=True)
+
         # --- Build UI ---
         self._apply_theme()
         self._build_ui()
+
+        # Press R (any time the window is focused) to start/stop recording raw
+        # samples, independent of how the app was launched.
+        self._rec_shortcut = QShortcut(QKeySequence("R"), self)
+        self._rec_shortcut.activated.connect(self._toggle_recording)
 
         # Timer to drain the queue
         self.drain_timer = QTimer()
@@ -629,6 +612,9 @@ class EKGVisualizer(QMainWindow):
         self.sample_buffer.extend(samples)
         self.total_samples += len(samples)
 
+        if self._rec_file is not None:
+            self._rec_file.write("\n".join(str(s) for s in samples) + "\n")
+
         bpm = self.bpm_calc.process(samples)
         if bpm > 0:
             self.bpm_label.setText(f"{int(round(bpm))} BPM")
@@ -642,6 +628,23 @@ class EKGVisualizer(QMainWindow):
 
     def _end_bpm_flash(self):
         self.heart_icon.setStyleSheet(f"color: {COLORS['bpm_color']};")
+
+    def _toggle_recording(self):
+        """Start/stop raw-sample recording. Saves next to this script so the
+        path is stable regardless of the launch directory."""
+        if self._rec_file is not None:
+            path = self._rec_file.name
+            self._rec_file.close()
+            self._rec_file = None
+            self.setWindowTitle("FPGA-EKG Monitor")
+            print(f"[REC] Stopped. Saved {path}", flush=True)
+        else:
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "capture_rest.csv")
+            self._rec_file = open(path, "w", buffering=1)
+            self.setWindowTitle("FPGA-EKG Monitor   ● REC")
+            print(f"[REC] Recording to {path}  (press R again to stop)",
+                  flush=True)
 
     def _on_connection_status(self, connected: bool, message: str):
         if connected:
@@ -665,6 +668,8 @@ class EKGVisualizer(QMainWindow):
     def closeEvent(self, event):
         self.plot_timer.stop()
         self.reader.stop()
+        if self._rec_file is not None:
+            self._rec_file.close()
         event.accept()
 
 
