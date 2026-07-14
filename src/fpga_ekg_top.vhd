@@ -262,11 +262,11 @@ begin
         );
 
     -- ========================================================================
-    -- Phase 2: Bandpass FIR (5-15 Hz, for QRS detection only)
+    -- Phase 2: Bandpass FIR (8-22 Hz, for QRS detection only)
     -- ========================================================================
     u_bandpass : entity work.bandpass_fir
         generic map (
-            G_NUM_TAPS => 33
+            G_NUM_TAPS => 65
         )
         port map (
             clk          => CLOCK_50,

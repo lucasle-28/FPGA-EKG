@@ -196,6 +196,14 @@ class JTAGReaderThread(QThread):
 
         sync_byte = None
 
+        # Throughput diagnostics: localize where samples are lost.
+        diag_t0 = time.monotonic()
+        diag_bytes = 0        # raw bytes read from JTAG
+        diag_samples = 0      # successfully decoded samples
+        diag_orphans = 0      # data bytes discarded for lack of a sync byte
+        diag_reads = 0        # read() calls
+        diag_empty = 0        # read() calls that returned nothing
+
         while self._running:
             try:
                 data = self.jtag.read(512)
@@ -203,24 +211,40 @@ class JTAGReaderThread(QThread):
                 self.connection_status.emit(False, "Connection lost")
                 break
 
+            diag_reads += 1
             if not data:
+                diag_empty += 1
                 time.sleep(0.005)  # 5 ms idle sleep to avoid busy-wait
-                continue
+            else:
+                diag_bytes += len(data)
+                samples = []
+                for b in data:
+                    if b & 0x80:
+                        # Sync byte: MSB = 1
+                        sync_byte = b
+                    elif sync_byte is not None:
+                        # Data byte: MSB = 0
+                        sample = ((sync_byte & 0x7F) << 5) | (b & 0x1F)
+                        samples.append(sample)
+                        sync_byte = None
+                    else:
+                        diag_orphans += 1  # data byte with no sync -> discard
 
-            samples = []
-            for b in data:
-                if b & 0x80:
-                    # Sync byte: MSB = 1
-                    sync_byte = b
-                elif sync_byte is not None:
-                    # Data byte: MSB = 0
-                    sample = ((sync_byte & 0x7F) << 5) | (b & 0x1F)
-                    samples.append(sample)
-                    sync_byte = None
-                # else: orphan data byte, discard (resync)
+                if samples:
+                    diag_samples += len(samples)
+                    self.data_queue.put(samples)
 
-            if samples:
-                self.data_queue.put(samples)
+            # Every ~2 s, report raw byte rate vs decoded sample rate.
+            now = time.monotonic()
+            if now - diag_t0 >= 2.0:
+                dt = now - diag_t0
+                print(f"[DIAG] {diag_bytes/dt:6.1f} bytes/s | "
+                      f"{diag_samples/dt:6.1f} samples/s | "
+                      f"orphans {diag_orphans} | "
+                      f"reads {diag_reads} (empty {diag_empty})", flush=True)
+                diag_t0 = now
+                diag_bytes = diag_samples = diag_orphans = 0
+                diag_reads = diag_empty = 0
 
         self.jtag.close()
         self.connection_status.emit(False, "Disconnected")
@@ -345,8 +369,8 @@ class EKGVisualizer(QMainWindow):
         buf_len = int(SAMPLE_RATE_HZ * self.display_seconds)
         self.sample_buffer = collections.deque(maxlen=buf_len)
         # Pre-fill so the plot starts full-width
-        for _ in range(buf_len):
-            self.sample_buffer.append(ADC_MAX // 2)
+        #for _ in range(buf_len):
+        #    self.sample_buffer.append(ADC_MAX // 2)
         self.total_samples = 0
         self.bpm_calc = BPMCalculator(SAMPLE_RATE_HZ)
         self.data_queue = queue.Queue()
@@ -357,6 +381,8 @@ class EKGVisualizer(QMainWindow):
         # or the EKG_RECORD environment variable. Every decoded sample is
         # appended, one per line.
         self._rec_file = None
+        self._rec_start = time.monotonic()
+        self._rec_count = 0
         rec_path = None
         if "--record" in sys.argv:
             i = sys.argv.index("--record")
@@ -614,12 +640,21 @@ class EKGVisualizer(QMainWindow):
 
         if self._rec_file is not None:
             self._rec_file.write("\n".join(str(s) for s in samples) + "\n")
+            self._rec_count += len(samples)
 
         bpm = self.bpm_calc.process(samples)
-        if bpm > 0:
+        if getattr(self.bpm_calc, "noisy", False):
+            # RR intervals too irregular -> the reading is not trustworthy.
+            # Show "--" rather than a confidently-wrong number.
+            self.bpm_label.setText("-- BPM")
+            self.bpm_label.setToolTip("Signal too noisy for a reliable BPM — "
+                                      "check electrode contact and lead placement.")
+        elif bpm > 0:
             self.bpm_label.setText(f"{int(round(bpm))} BPM")
+            self.bpm_label.setToolTip("")
         else:
             self.bpm_label.setText("-- BPM")
+            self.bpm_label.setToolTip("")
 
         # Flash the heart on beat detection
         if self.bpm_calc.beat_detected:
@@ -631,17 +666,34 @@ class EKGVisualizer(QMainWindow):
 
     def _toggle_recording(self):
         """Start/stop raw-sample recording. Saves next to this script so the
-        path is stable regardless of the launch directory."""
+        path is stable regardless of the launch directory. On stop, prints the
+        TRUE effective sample rate measured from the PC clock -- if this is not
+        ~360 Hz, the assumed rate is wrong and both the time axis and BPM are
+        scaled by that error."""
         if self._rec_file is not None:
             path = self._rec_file.name
             self._rec_file.close()
             self._rec_file = None
             self.setWindowTitle("FPGA-EKG Monitor")
-            print(f"[REC] Stopped. Saved {path}", flush=True)
+            elapsed = time.monotonic() - self._rec_start
+            n = self._rec_count
+            if elapsed > 0:
+                rate = n / elapsed
+                print(f"[REC] Stopped. Saved {path}", flush=True)
+                print(f"[REC] {n} samples in {elapsed:.1f} s wall clock "
+                      f"-> MEASURED rate = {rate:.1f} Hz "
+                      f"(app assumes {SAMPLE_RATE_HZ} Hz)", flush=True)
+                if abs(rate - SAMPLE_RATE_HZ) > 0.05 * SAMPLE_RATE_HZ:
+                    factor = SAMPLE_RATE_HZ / rate
+                    print(f"[REC] *** Rate is off by {factor:.2f}x -- this "
+                          f"alone would scale BPM by {factor:.2f}x ***",
+                          flush=True)
         else:
             path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "capture_rest.csv")
             self._rec_file = open(path, "w", buffering=1)
+            self._rec_start = time.monotonic()
+            self._rec_count = 0
             self.setWindowTitle("FPGA-EKG Monitor   ● REC")
             print(f"[REC] Recording to {path}  (press R again to stop)",
                   flush=True)

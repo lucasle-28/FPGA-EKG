@@ -89,3 +89,5 @@ env/
 *.fig
 *.mex*
 *.mat
+
+.claude/

@@ -14,12 +14,22 @@ import numpy as np
 # subtracts 2048 before filtering (see fpga_ekg_top.vhd, p_adc_to_q15).
 ADC_MID = 2048.0
 
-# 5-15 Hz bandpass FIR — the SAME 33-tap Q1.15 filter the FPGA computes in
+# 8-22 Hz bandpass FIR — the SAME 65-tap Q1.15 filter the FPGA computes in
 # bandpass_fir.vhd (coefficients from scripts/golden_model.py). Running it here
 # keeps the software detector and the on-chip QRS front-end in agreement and,
 # critically, band-limits the signal *before* the derivative stage below.
-_FIR_HALF = [-200, -214, -255, -305, -335, -313, -209, 0, 325, 762,
-             1288, 1866, 2447, 2976, 3400, 3673, 3768]
+#
+# This replaces the previous 33-tap "5-15 Hz" design, which — at fs=360 Hz —
+# could not realise its high-pass edge and was effectively a ~0-18 Hz low-pass
+# with DC gain ~1.0. That let baseline wander and (worse) the T-wave through at
+# nearly full gain while *attenuating* the QRS core, which biases QRS detection.
+# 65 taps give a real 8-22 Hz passband: DC/T-wave (3 Hz) drop to ~0.11, the QRS
+# core (12-20 Hz) passes at ~1.0, and 50/60 Hz mains sit at ~0. The longer delay
+# line costs a few more MAC cycles but is trivial at 50 MHz / 360 Hz.
+_FIR_HALF = [   19,     9,     0,    -8,   -13,   -12,    -4,    14,    42,    76,
+               110,   132,   131,    90,     0,  -147,  -350,  -595,  -862, -1118,
+             -1326, -1447, -1446, -1301, -1002,  -558,     0,   627,  1265,  1850,
+              2320,  2624,  2729]
 BANDPASS_FIR = np.array(_FIR_HALF + _FIR_HALF[-2::-1], dtype=float) / (1 << 15)
 
 
@@ -81,6 +91,15 @@ class BPMCalculator:
         self.bpm = 0.0
         self.beat_detected = False   # True for one process() call after a beat
 
+        # Signal-quality gate. On a clean trace the beat-to-beat RR interval is
+        # regular (coefficient of variation ~0.05); on a poorly-contacted lead
+        # the detector fires on impulse/T-wave artefacts and RR becomes wildly
+        # irregular (~0.4+). When that happens the BPM is not trustworthy, so we
+        # raise `noisy` and the UI shows "--" instead of a confidently-wrong
+        # number. This does NOT alter detection — it only labels reliability.
+        self.noisy = False
+        self.RR_CV_LIMIT = 0.20
+
     def _mwi(self, x: float) -> float:
         """Push one raw sample; return its moving-window-integrated value."""
         # 5-15 Hz bandpass on the zero-centred sample (rejects EMG / drift).
@@ -105,6 +124,10 @@ class BPMCalculator:
         if len(self.rr_intervals) >= 3:
             median_rr = float(np.median(self.rr_intervals))
             self.bpm = 60.0 * self.fs / median_rr
+        # Flag an unreliable (noisy / poorly-contacted) signal from RR spread.
+        if len(self.rr_intervals) >= 4:
+            rr_arr = np.asarray(self.rr_intervals, dtype=float)
+            self.noisy = (rr_arr.std() / rr_arr.mean()) > self.RR_CV_LIMIT
 
     def process(self, samples: list):
         """Feed new samples and return the current BPM estimate."""
@@ -120,6 +143,7 @@ class BPMCalculator:
                 self.bpm = 0.0
                 self.rr_intervals.clear()
                 self.first_beat_done = False   # re-anchor on the next beat
+                self.noisy = False
 
             # Bootstrap the thresholds from the first ~2 s of data. Skip the
             # FIR warm-up, and seed from the 95th percentile rather than the

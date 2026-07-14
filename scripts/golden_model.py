@@ -27,11 +27,14 @@ Q14 = float(1 << 14)
 # dc_block.vhd — alpha in Q15:  y[n] = x[n] - x[n-1] + alpha*y[n-1]
 ALPHA = 32604 / 32768.0
 
-# bandpass_fir.vhd — Q1.15, symmetric 33 taps (first half + center listed)
-FIR_HALF = [-200, -214, -255, -305, -335, -313, -209, 0, 325, 762,
-            1288, 1866, 2447, 2976, 3400, 3673, 3768]
+# bandpass_fir.vhd — Q1.15, symmetric 65 taps (first half + center listed).
+# firwin(65, [8, 22], pass_zero=False, fs=360, window='hamming'), *2**15 rounded.
+FIR_HALF = [   19,     9,     0,    -8,   -13,   -12,    -4,    14,    42,    76,
+              110,   132,   131,    90,     0,  -147,  -350,  -595,  -862, -1118,
+            -1326, -1447, -1446, -1301, -1002,  -558,     0,   627,  1265,  1850,
+             2320,  2624,  2729]
 FIR = np.array(FIR_HALF + FIR_HALF[-2::-1], dtype=float) / (1 << 15)
-assert len(FIR) == 33
+assert len(FIR) == 65
 
 
 def gain(b, a, f_hz):
@@ -73,17 +76,18 @@ def main():
           "20 Hz within [0.90, 1.10].\n")
 
     # -------------------------------------------------------------------------
-    print("bandpass_fir (33-tap Q1.15 quantized):")
-    for f in [0, 2, 5, 10, 15, 25, 40, 60]:
+    print("bandpass_fir (65-tap Q1.15 quantized, 8-22 Hz):")
+    for f in [0, 2, 3, 5, 8, 10, 15, 22, 25, 40, 60]:
         w = 2 * np.pi * f / FS
-        h = abs(np.sum(FIR * np.exp(-1j * w * np.arange(33))))
-        print(f"  {f:5g} Hz: {db(h):+6.1f} dB")
+        h = abs(np.sum(FIR * np.exp(-1j * w * np.arange(len(FIR)))))
+        print(f"  {f:5g} Hz: {db(h):+6.1f} dB  ({h:.3f})")
     dc = np.sum(FIR)
-    print(f"  DC gain = {dc:.3f}  <-- NOTE: not ~0!")
-    print("  A 33-tap Hamming FIR at fs=360 has ~18 Hz transition width, so")
-    print("  the 5 Hz high-pass edge cannot be realized. Acceptable in-system")
-    print("  (dc_block precedes it), but the filter is effectively a ~15-20 Hz")
-    print("  low-pass. Use >= 128 taps if true 5 Hz rejection is ever needed.")
+    print(f"  DC gain = {dc:.3f}  (now ~0 -> baseline/T-wave rejected)")
+    print("  65 taps give a real 8-22 Hz passband at fs=360 Hz: sub-8 Hz (baseline")
+    print("  wander, T-wave) and >25 Hz (mains/EMG) are attenuated while the QRS")
+    print("  core passes near unity. This replaces the old 33-tap design, which")
+    print("  could not realize a high-pass edge and passed the T-wave at ~full")
+    print("  gain (biasing QRS detection toward double-counting).")
     print("  TB expects: 10 Hz within [0.70, 1.20], 60 Hz < 0.20, DC info-only.")
 
     # -------------------------------------------------------------------------
@@ -94,8 +98,8 @@ def main():
         b60, a60 = sps.iirnotch(60, 30, fs=FS)
         print("  iirnotch(60, Q=30) b*2^14 =",
               np.round(b60 / a60[0] * Q14).astype(int).tolist())
-        h = sps.firwin(33, [5, 15], pass_zero=False, fs=FS)
-        print("  firwin(33,[5,15])  h*2^15 (first 5) =",
+        h = sps.firwin(65, [8, 22], pass_zero=False, fs=FS)
+        print("  firwin(65,[8,22])  h*2^15 (first 5) =",
               np.round(h[:5] * (1 << 15)).astype(int).tolist())
     except ImportError:
         print("\n(scipy not installed - skipping design cross-check)")

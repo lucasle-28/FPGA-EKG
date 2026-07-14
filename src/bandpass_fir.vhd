@@ -1,23 +1,26 @@
 -- ============================================================================
 -- bandpass_fir.vhd
--- Symmetric FIR bandpass filter (5-15 Hz) to isolate QRS energy.
+-- Symmetric FIR bandpass filter (8-22 Hz) to isolate QRS energy.
 --
 -- Used by the Pan-Tompkins QRS detector. Coefficients designed with
---   scipy.signal.firwin(33, [5, 15], pass_zero=False, fs=360, window='hamming')
+--   scipy.signal.firwin(65, [8, 22], pass_zero=False, fs=360, window='hamming')
 -- and quantized to Q1.15.
 --
--- 33-tap symmetric filter: h[k] = h[32-k] for k = 0..16.
--- Pre-adds symmetric sample pairs before multiply → 17 multiplies instead of 33.
+-- 65-tap symmetric filter: h[k] = h[64-k] for k = 0..32.
+-- Pre-adds symmetric sample pairs before multiply → 33 multiplies instead of 65.
 --
 -- Sequential MAC FSM: processes one tap pair per clock cycle.
--- At 50 MHz / 360 Hz = 138889 clocks per sample, 17 MAC cycles is plenty.
+-- At 50 MHz / 360 Hz = 138889 clocks per sample, 33 MAC cycles is plenty.
 --
--- KNOWN LIMITATION: with 33 taps at fs=360 Hz, the Hamming-window transition
--- width (~18 Hz) is wider than the 5 Hz high-pass edge, so frequencies below
--- 5 Hz are NOT attenuated (DC gain ~1.0). This is acceptable in-system
--- because dc_block precedes this filter; effectively this stage acts as a
--- ~15-20 Hz low-pass. Use >= 128 taps if true 5 Hz rejection is needed.
--- See scripts/golden_model.py for the measured response.
+-- DESIGN NOTE: the previous 33-tap "5-15 Hz" version could not realise its
+-- high-pass edge at fs=360 Hz (Hamming transition width ~18 Hz), so it passed
+-- DC/baseline and the T-wave at ~unity gain while attenuating the QRS core —
+-- biasing the detector toward counting T-waves as extra beats. 65 taps give a
+-- real 8-22 Hz passband: sub-8 Hz (baseline/T-wave) and >25 Hz (mains/EMG) are
+-- attenuated, QRS core passes near unity. See scripts/golden_model.py for the
+-- measured response. NOTE: re-run synthesis and tb/tb_bandpass_fir after this
+-- change (the golden-model TB thresholds — 10 Hz in [0.70,1.20], 60 Hz < 0.20 —
+-- still hold for the new coefficients).
 --
 -- Phase 2 implementation.
 -- ============================================================================
@@ -28,7 +31,7 @@ use ieee.numeric_std.all;
 
 entity bandpass_fir is
     generic (
-        G_NUM_TAPS : natural := 33  -- Filter order + 1 (odd for symmetric)
+        G_NUM_TAPS : natural := 65  -- Filter order + 1 (odd for symmetric)
     );
     port (
         clk          : in  std_logic;
@@ -47,31 +50,47 @@ architecture rtl of bandpass_fir is
     -- ========================================================================
     -- Constants
     -- ========================================================================
-    constant C_HALF_TAPS : natural := (G_NUM_TAPS + 1) / 2;  -- 17 unique coefficients
+    constant C_HALF_TAPS : natural := (G_NUM_TAPS + 1) / 2;  -- 33 unique coefficients
 
     -- Coefficient array type (Q1.15)
     type coeff_array_t is array (0 to C_HALF_TAPS - 1) of signed(15 downto 0);
 
-    -- Coefficients from scipy.signal.firwin(33, [5,15], pass_zero=False, fs=360)
+    -- Coefficients from scipy.signal.firwin(65, [8,22], pass_zero=False, fs=360)
     -- Quantized to Q1.15 (multiply by 32768 and round)
     constant C_COEFFS : coeff_array_t := (
-        to_signed(  -200, 16),  -- h[0]  = h[32]
-        to_signed(  -214, 16),  -- h[1]  = h[31]
-        to_signed(  -255, 16),  -- h[2]  = h[30]
-        to_signed(  -305, 16),  -- h[3]  = h[29]
-        to_signed(  -335, 16),  -- h[4]  = h[28]
-        to_signed(  -313, 16),  -- h[5]  = h[27]
-        to_signed(  -209, 16),  -- h[6]  = h[26]
-        to_signed(     0, 16),  -- h[7]  = h[25]
-        to_signed(   325, 16),  -- h[8]  = h[24]
-        to_signed(   762, 16),  -- h[9]  = h[23]
-        to_signed(  1288, 16),  -- h[10] = h[22]
-        to_signed(  1866, 16),  -- h[11] = h[21]
-        to_signed(  2447, 16),  -- h[12] = h[20]
-        to_signed(  2976, 16),  -- h[13] = h[19]
-        to_signed(  3400, 16),  -- h[14] = h[18]
-        to_signed(  3673, 16),  -- h[15] = h[17]
-        to_signed(  3768, 16)   -- h[16] (center tap, no pair)
+        to_signed(    19, 16),  -- h[0]  = h[64]
+        to_signed(     9, 16),  -- h[1]  = h[63]
+        to_signed(     0, 16),  -- h[2]  = h[62]
+        to_signed(    -8, 16),  -- h[3]  = h[61]
+        to_signed(   -13, 16),  -- h[4]  = h[60]
+        to_signed(   -12, 16),  -- h[5]  = h[59]
+        to_signed(    -4, 16),  -- h[6]  = h[58]
+        to_signed(    14, 16),  -- h[7]  = h[57]
+        to_signed(    42, 16),  -- h[8]  = h[56]
+        to_signed(    76, 16),  -- h[9]  = h[55]
+        to_signed(   110, 16),  -- h[10] = h[54]
+        to_signed(   132, 16),  -- h[11] = h[53]
+        to_signed(   131, 16),  -- h[12] = h[52]
+        to_signed(    90, 16),  -- h[13] = h[51]
+        to_signed(     0, 16),  -- h[14] = h[50]
+        to_signed(  -147, 16),  -- h[15] = h[49]
+        to_signed(  -350, 16),  -- h[16] = h[48]
+        to_signed(  -595, 16),  -- h[17] = h[47]
+        to_signed(  -862, 16),  -- h[18] = h[46]
+        to_signed( -1118, 16),  -- h[19] = h[45]
+        to_signed( -1326, 16),  -- h[20] = h[44]
+        to_signed( -1447, 16),  -- h[21] = h[43]
+        to_signed( -1446, 16),  -- h[22] = h[42]
+        to_signed( -1301, 16),  -- h[23] = h[41]
+        to_signed( -1002, 16),  -- h[24] = h[40]
+        to_signed(  -558, 16),  -- h[25] = h[39]
+        to_signed(     0, 16),  -- h[26] = h[38]
+        to_signed(   627, 16),  -- h[27] = h[37]
+        to_signed(  1265, 16),  -- h[28] = h[36]
+        to_signed(  1850, 16),  -- h[29] = h[35]
+        to_signed(  2320, 16),  -- h[30] = h[34]
+        to_signed(  2624, 16),  -- h[31] = h[33]
+        to_signed(  2729, 16)   -- h[32] (center tap, no pair)
     );
 
     -- ========================================================================
@@ -89,7 +108,7 @@ architecture rtl of bandpass_fir is
 
     -- Accumulator: Q1.15 data × Q1.15 coeff = Q2.30 product
     -- Pre-added pair is 17-bit × 16-bit coeff = 33-bit product
-    -- Sum of 17 products: need 33 + 5 = 38 bits, use 40 for safety
+    -- Sum of 33 products: need 33 + 6 = 39 bits, 40-bit acc has 1 bit of margin
     signal acc : signed(39 downto 0) := (others => '0');
 
 begin
